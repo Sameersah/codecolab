@@ -1,0 +1,8 @@
+//
+// Created by Sameer on 11/04/25.
+//
+
+#ifndef COLLABORATIONMANAGER_H
+#define COLLABORATIONMANAGER_H
+
+#endif //COLLABORATIONMANAGER_H
