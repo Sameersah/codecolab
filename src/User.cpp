@@ -63,8 +63,8 @@ std::shared_ptr<Document> RegisteredUser::createDocument(const QString& title)
     QString docId = "doc_" + QString::number(QDateTime::currentMSecsSinceEpoch());
 
     // Create the document
-    auto doc = std::make_shared<Document>(docId, title,
-        std::dynamic_pointer_cast<User>(shared_from_this()));
+    auto doc = std::make_shared<Document>(docId, title, nullptr); // Or pass raw `this` if accepted
+
 
     // Add to owned documents
     documentsOwned.append(doc);

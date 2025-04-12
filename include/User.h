@@ -7,12 +7,12 @@
 #include <QColor>
 #include <QObject>  // Add proper include for QObject
 #include <memory>
-#include <QSharedFromThis> // Add for shared_from_this functionality
+
 
 class Document;
 
 // Base User interface
-class User : public QObject, public std::enable_shared_from_this<User>
+class User : public QObject
 {
     Q_OBJECT
 

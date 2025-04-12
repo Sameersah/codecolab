@@ -16,11 +16,11 @@ CollaborationClient::CollaborationClient(QObject *parent)
     , isDocumentJoined(false)
 {
     // Connect WebSocket signals
-    connect(&webSocket, &QWebSocket::connected, this, &CollaborationClient::onConnected);
-    connect(&webSocket, &QWebSocket::disconnected, this, &CollaborationClient::onDisconnected);
-    connect(&webSocket, &QWebSocket::textMessageReceived, this, &CollaborationClient::onTextMessageReceived);
-    connect(&webSocket, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error), 
-            this, &CollaborationClient::onError);
+    QObject::connect(&webSocket, &QWebSocket::connected, this, &CollaborationClient::onConnected);
+    QObject::connect(&webSocket, &QWebSocket::disconnected, this, &CollaborationClient::onDisconnected);
+    QObject::connect(&webSocket, &QWebSocket::textMessageReceived, this, &CollaborationClient::onTextMessageReceived);
+    QObject::connect(&webSocket, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::errorOccurred),
+                     this, &CollaborationClient::onError);
 }
 
 CollaborationClient::~CollaborationClient()
@@ -80,22 +80,16 @@ void CollaborationClient::joinDocument(const QString& documentId)
         emit error("No user is set");
         return;
     }
-    
+
     // Construct a join message
     QJsonObject payload;
     payload["documentId"] = documentId;
     payload["userId"] = currentUser->getUserId();
     payload["username"] = currentUser->getUsername();
-    
-    // Send the message
+
     sendMessage("join", payload);
-    
-    // For the prototype, simulate successful join
-    QTimer::singleShot(500, [this, documentId]() {
-        isDocumentJoined = true;
-        emit documentJoined(documentId);
-        
-        // For the prototype, simulate successful join
+
+    // Simulate document join
     QTimer::singleShot(500, [this, documentId]() {
         isDocumentJoined = true;
         emit documentJoined(documentId);
@@ -104,30 +98,26 @@ void CollaborationClient::joinDocument(const QString& documentId)
         QStringList userIds = {"user1", "user2", "user3"};
         QStringList usernames = {"Alice", "Bob", "Charlie"};
 
-        // Filter out the current user
-        for (int i = 0; i < userIds.size(); i++) {
+        // Remove self
+        for (int i = 0; i < userIds.size(); ++i) {
             if (currentUser && userIds[i] == currentUser->getUserId()) {
                 userIds.removeAt(i);
                 usernames.removeAt(i);
-                i--;
+                --i;
             }
         }
 
-        // Randomly select 1-2 users to be in the document
-        int numUsers = 1 + QRandomGenerator::global()->bounded(2); // Replace qrand
-        for (int i = 0; i < numUsers && i < userIds.size(); i++) {
-            // Add user to connected users
+        int numUsers = 1 + QRandomGenerator::global()->bounded(2);
+        for (int i = 0; i < numUsers && i < userIds.size(); ++i) {
             connectedUsers[userIds[i]] = usernames[i];
-
-            // Emit signal
             emit userConnected(userIds[i], usernames[i]);
 
-            // Simulate initial cursor position
-            int randomPos = QRandomGenerator::global()->bounded(100); // Replace qrand
+            int randomPos = QRandomGenerator::global()->bounded(100);
             emit cursorPositionReceived(userIds[i], usernames[i], randomPos);
         }
-    });
+    }); // ✅ This closes the outer QTimer lambda
 }
+
 
 void CollaborationClient::leaveDocument()
 {
