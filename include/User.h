@@ -1,15 +1,18 @@
+// User.h
 #ifndef USER_H
 #define USER_H
 
 #include <QString>
 #include <QVector>
 #include <QColor>
+#include <QObject>  // Add proper include for QObject
 #include <memory>
+#include <QSharedFromThis> // Add for shared_from_this functionality
 
 class Document;
 
 // Base User interface
-class User : public QObject
+class User : public QObject, public std::enable_shared_from_this<User>
 {
     Q_OBJECT
 

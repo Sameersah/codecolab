@@ -126,29 +126,70 @@ void MainWindow::setupUI()
     statusLabel = std::make_unique<QLabel>("Not logged in");
     statusBar()->addWidget(statusLabel.get());
 
-    // Setup menus
+    // Setup menus with newer Qt 6 syntax
     QMenu* fileMenu = menuBar()->addMenu("&File");
-    fileMenu->addAction("New", this, &MainWindow::onNewDocument, QKeySequence::New);
-    fileMenu->addAction("Open", this, &MainWindow::onOpenDocument, QKeySequence::Open);
-    fileMenu->addAction("Save", this, &MainWindow::onSaveDocument, QKeySequence::Save);
+    QAction* newAction = new QAction("New", this);
+    newAction->setShortcut(QKeySequence::New);
+    connect(newAction, &QAction::triggered, this, &MainWindow::onNewDocument);
+    fileMenu->addAction(newAction);
+
+    QAction* openAction = new QAction("Open", this);
+    openAction->setShortcut(QKeySequence::Open);
+    connect(openAction, &QAction::triggered, this, &MainWindow::onOpenDocument);
+    fileMenu->addAction(openAction);
+
+    QAction* saveAction = new QAction("Save", this);
+    saveAction->setShortcut(QKeySequence::Save);
+    connect(saveAction, &QAction::triggered, this, &MainWindow::onSaveDocument);
+    fileMenu->addAction(saveAction);
+
     fileMenu->addSeparator();
-    fileMenu->addAction("Exit", this, &QWidget::close, QKeySequence::Quit);
+
+    QAction* exitAction = new QAction("Exit", this);
+    exitAction->setShortcut(QKeySequence::Quit);
+    connect(exitAction, &QAction::triggered, this, &QWidget::close);
+    fileMenu->addAction(exitAction);
 
     QMenu* editMenu = menuBar()->addMenu("&Edit");
-    editMenu->addAction("Cut", codeEditor.get(), &QPlainTextEdit::cut, QKeySequence::Cut);
-    editMenu->addAction("Copy", codeEditor.get(), &QPlainTextEdit::copy, QKeySequence::Copy);
-    editMenu->addAction("Paste", codeEditor.get(), &QPlainTextEdit::paste, QKeySequence::Paste);
+    QAction* cutAction = new QAction("Cut", this);
+    cutAction->setShortcut(QKeySequence::Cut);
+    connect(cutAction, &QAction::triggered, codeEditor.get(), &QPlainTextEdit::cut);
+    editMenu->addAction(cutAction);
+
+    QAction* copyAction = new QAction("Copy", this);
+    copyAction->setShortcut(QKeySequence::Copy);
+    connect(copyAction, &QAction::triggered, codeEditor.get(), &QPlainTextEdit::copy);
+    editMenu->addAction(copyAction);
+
+    QAction* pasteAction = new QAction("Paste", this);
+    pasteAction->setShortcut(QKeySequence::Paste);
+    connect(pasteAction, &QAction::triggered, codeEditor.get(), &QPlainTextEdit::paste);
+    editMenu->addAction(pasteAction);
 
     QMenu* viewMenu = menuBar()->addMenu("&View");
-    viewMenu->addAction("Zoom In", codeEditor.get(), &QPlainTextEdit::zoomIn, QKeySequence::ZoomIn);
-    viewMenu->addAction("Zoom Out", codeEditor.get(), &QPlainTextEdit::zoomOut, QKeySequence::ZoomOut);
+    QAction* zoomInAction = new QAction("Zoom In", this);
+    zoomInAction->setShortcut(QKeySequence::ZoomIn);
+    connect(zoomInAction, &QAction::triggered, codeEditor.get(), &QPlainTextEdit::zoomIn);
+    viewMenu->addAction(zoomInAction);
+
+    QAction* zoomOutAction = new QAction("Zoom Out", this);
+    zoomOutAction->setShortcut(QKeySequence::ZoomOut);
+    connect(zoomOutAction, &QAction::triggered, codeEditor.get(), &QPlainTextEdit::zoomOut);
+    viewMenu->addAction(zoomOutAction);
 
     QMenu* collaborationMenu = menuBar()->addMenu("&Collaboration");
-    collaborationMenu->addAction("Share Document", this, &MainWindow::onShareDocument);
+    QAction* shareAction = new QAction("Share Document", this);
+    connect(shareAction, &QAction::triggered, this, &MainWindow::onShareDocument);
+    collaborationMenu->addAction(shareAction);
 
     QMenu* userMenu = menuBar()->addMenu("&User");
-    userMenu->addAction("Login", this, &MainWindow::onLogin);
-    userMenu->addAction("Logout", this, &MainWindow::onLogout);
+    QAction* loginAction = new QAction("Login", this);
+    connect(loginAction, &QAction::triggered, this, &MainWindow::onLogin);
+    userMenu->addAction(loginAction);
+
+    QAction* logoutAction = new QAction("Logout", this);
+    connect(logoutAction, &QAction::triggered, this, &MainWindow::onLogout);
+    userMenu->addAction(logoutAction);
 
     // Set window properties
     resize(1024, 768);
@@ -478,18 +519,16 @@ void MainWindow::onCursorPositionChanged()
     // In a real implementation, we would send this position to other users
     // For the prototype, we'll simulate other users' cursors randomly
     if (isCollaborating) {
-        static QMap<QString, int> randomPositions;
+        static QElapsedTimer lastUpdate; // Replace QTime with QElapsedTimer
 
         // Periodically update simulated cursors for demo purposes
-        static QTime lastUpdate;
-        if (lastUpdate.isNull() || lastUpdate.elapsed() > 2000) {
-            lastUpdate = QTime::currentTime();
+        if (!lastUpdate.isValid() || lastUpdate.elapsed() > 2000) {
+            lastUpdate.start(); // Restart the timer
 
             for (const auto& [userId, username] : connectedUsers.toStdMap()) {
                 // Generate random position within the document
                 int maxPos = codeEditor->document()->characterCount();
-                int randomPos = qrand() % maxPos;
-                randomPositions[userId] = randomPos;
+                int randomPos = QRandomGenerator::global()->bounded(maxPos); // Replace qrand with QRandomGenerator
 
                 // Update the remote cursor in the editor
                 codeEditor->updateRemoteCursor(userId, username, randomPos);
@@ -526,7 +565,7 @@ void MainWindow::onChatMessageReceived(const QString& userId, const QString& mes
 }
 
 void MainWindow::onSendChatMessage()
-{
+{{
     if (!currentUser || !currentDocument) return;
 
     QString message = chatInput->toPlainText().trimmed();
@@ -543,7 +582,7 @@ void MainWindow::onSendChatMessage()
             // Get a random user to respond
             if (!connectedUsers.isEmpty()) {
                 QStringList userIds = connectedUsers.keys();
-                QString randomUserId = userIds[qrand() % userIds.size()];
+                QString randomUserId = userIds[QRandomGenerator::global()->bounded(userIds.size())]; // Replace qrand
 
                 // Generate a simulated response
                 QStringList responses = {
@@ -554,9 +593,10 @@ void MainWindow::onSendChatMessage()
                     "Let me check that function you mentioned."
                 };
 
-                QString response = responses[qrand() % responses.size()];
+                QString response = responses[QRandomGenerator::global()->bounded(responses.size())]; // Replace qrand
                 onChatMessageReceived(randomUserId, response);
             }
         });
     }
+}
 }

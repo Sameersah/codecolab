@@ -1,3 +1,4 @@
+// MainWindow.h
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
@@ -5,6 +6,8 @@
 #include <QLabel>
 #include <QString>
 #include <memory>
+#include <QElapsedTimer>    // Add for Qt 6
+#include <QRandomGenerator> // Add for Qt 6
 
 #include "User.h"
 #include "Document.h"

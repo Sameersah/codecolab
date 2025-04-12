@@ -1,0 +1,17 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/icons">
+        <file>icons/new.png</file>
+        <file>icons/open.png</file>
+        <file>icons/save.png</file>
+        <file>icons/cut.png</file>
+        <file>icons/copy.png</file>
+        <file>icons/paste.png</file>
+        <file>icons/user.png</file>
+        <file>icons/share.png</file>
+        <file>icons/logo.png</file>
+    </qresource>
+    <qresource prefix="/styles">
+        <file>styles/default.qss</file>
+    </qresource>
+</RCC>

@@ -1,3 +1,4 @@
+// CodeEditorWidget.cpp
 #include "CodeEditorWidget.h"
 #include "SyntaxHighlighter.h"
 #include "Document.h"
@@ -9,6 +10,7 @@
 #include <QKeyEvent>
 #include <QScrollBar>
 #include <QDebug>
+#include <QResizeEvent>
 
 CodeEditorWidget::CodeEditorWidget(QWidget *parent)
     : QPlainTextEdit(parent)
@@ -18,30 +20,31 @@ CodeEditorWidget::CodeEditorWidget(QWidget *parent)
     , ignoreChanges(false)
 {
     setLineWrapMode(QPlainTextEdit::NoWrap);
-    
+
     // Enable line numbers
     connect(this, &QPlainTextEdit::blockCountChanged, this, &CodeEditorWidget::updateLineNumberAreaWidth);
     connect(this, &QPlainTextEdit::updateRequest, this, &CodeEditorWidget::updateLineNumberArea);
     connect(this, &QPlainTextEdit::cursorPositionChanged, this, &CodeEditorWidget::highlightCurrentLine);
     connect(this, &QPlainTextEdit::textChanged, this, &CodeEditorWidget::onTextChanged);
     connect(this, &QPlainTextEdit::cursorPositionChanged, this, &CodeEditorWidget::onCursorPositionChanged);
-    
+
     updateLineNumberAreaWidth(0);
     highlightCurrentLine();
-    
+
     // Set a monospaced font
     QFont font("Courier New", 10);
     font.setFixedPitch(true);
     setFont(font);
-    
-    // Set tab width to 4 spaces
-    QFontMetrics metrics(font);
-    setTabStopWidth(4 * metrics.width(' '));
+
+    // Set tab width to 4 spaces (updated for Qt 6)
+    QFontMetricsF metrics(font);
+    setTabStopDistance(4 * metrics.horizontalAdvance(' '));
 }
 
 CodeEditorWidget::~CodeEditorWidget()
 {
     delete syntaxHighlighter;
+    // lineNumberArea is automatically deleted as a child widget
 }
 
 void CodeEditorWidget::setDocument(std::shared_ptr<Document> doc)
@@ -52,10 +55,12 @@ void CodeEditorWidget::setDocument(std::shared_ptr<Document> doc)
             delete syntaxHighlighter;
             syntaxHighlighter = nullptr;
         }
-        
+
         // Create a new syntax highlighter
         syntaxHighlighter = new SyntaxHighlighter(document());
-        setLanguage(currentDocument->getLanguage());
+
+        // Call the method on our custom SyntaxHighlighter class
+        dynamic_cast<SyntaxHighlighter*>(syntaxHighlighter)->setLanguage(currentDocument->getLanguage());
     }
 }
 
@@ -68,7 +73,8 @@ void CodeEditorWidget::setLanguage(const QString& language)
 {
     currentLanguage = language;
     if (syntaxHighlighter) {
-        syntaxHighlighter->setLanguage(language);
+        // Call the method on our custom SyntaxHighlighter class
+        dynamic_cast<SyntaxHighlighter*>(syntaxHighlighter)->setLanguage(language);
     }
 }
 
@@ -86,7 +92,7 @@ void CodeEditorWidget::updateRemoteCursor(const QString& userId, const QString& 
     cursor.userId = userId;
     cursor.username = username;
     cursor.position = position;
-    
+
     // Assign a color if it doesn't have one
     if (!remoteCursors.contains(userId)) {
         // Generate a color based on userId hash
@@ -94,7 +100,7 @@ void CodeEditorWidget::updateRemoteCursor(const QString& userId, const QString& 
         for (QChar c : userId) {
             hash = (hash * 31) + c.unicode();
         }
-        
+
         // Create a hue between 0 and 359 (exclude red which is for errors)
         int hue = (hash % 300) + 30;
         QColor color = QColor::fromHsv(hue, 255, 255);
@@ -102,10 +108,10 @@ void CodeEditorWidget::updateRemoteCursor(const QString& userId, const QString& 
     } else {
         cursor.color = remoteCursors[userId].color;
     }
-    
+
     // Store the cursor
     remoteCursors[userId] = cursor;
-    
+
     // Trigger repaint
     viewport()->update();
 }
@@ -122,34 +128,37 @@ void CodeEditorWidget::paintEvent(QPaintEvent* event)
 {
     // First do the standard painting
     QPlainTextEdit::paintEvent(event);
-    
+
     // Now draw remote cursors
     QPainter painter(viewport());
-    
+
     for (const auto& cursor : remoteCursors) {
         // Get the position of the cursor in the document
         QTextCursor textCursor = QTextCursor(document());
         textCursor.setPosition(cursor.position);
-        QRect cursorRect = cursorRect(textCursor);
-        
+
+        // Get the cursor rectangle using the correct method for Qt 6.9.0
+        // Use QPlainTextEdit:: prefix to avoid naming conflict with local variable
+        QRect cursorRectangle = QPlainTextEdit::cursorRect(textCursor);
+
         // Draw a vertical line for the cursor
         painter.setPen(QPen(cursor.color, 2));
-        painter.drawLine(cursorRect.topLeft(), cursorRect.bottomLeft());
-        
+        painter.drawLine(cursorRectangle.topLeft(), cursorRectangle.bottomLeft());
+
         // Draw the username above the cursor
         QFont font = painter.font();
         font.setBold(true);
         painter.setFont(font);
-        
-        QRect nameRect = cursorRect;
+
+        QRect nameRect = cursorRectangle;
         nameRect.setHeight(fontMetrics().height());
-        nameRect.moveTop(cursorRect.top() - nameRect.height());
-        nameRect.setLeft(cursorRect.left());
-        nameRect.setWidth(fontMetrics().width(cursor.username) + 10);
-        
+        nameRect.moveTop(cursorRectangle.top() - nameRect.height());
+        nameRect.setLeft(cursorRectangle.left());
+        nameRect.setWidth(fontMetrics().horizontalAdvance(cursor.username) + 10);
+
         // Draw a background rectangle
         painter.fillRect(nameRect, cursor.color);
-        
+
         // Draw the text
         painter.setPen(Qt::white);
         painter.drawText(nameRect, Qt::AlignCenter, cursor.username);
@@ -190,7 +199,7 @@ int CodeEditorWidget::lineNumberAreaWidth() const
         ++digits;
     }
 
-    int space = 3 + fontMetrics().width(QLatin1Char('9')) * digits;
+    int space = 3 + fontMetrics().horizontalAdvance(QLatin1Char('9')) * digits;
     return space;
 }
 
@@ -309,8 +318,12 @@ void CodeEditorWidget::onCursorPositionChanged()
     emit cursorPositionChanged(textCursor().position());
 }
 
-// LineNumberArea paint event handler
-void CodeEditorWidget::LineNumberArea::paintEvent(QPaintEvent *event)
+void CodeEditorWidget::mousePressEvent(QMouseEvent *event)
 {
-    editor->lineNumberAreaPaintEvent(event);
+    QPlainTextEdit::mousePressEvent(event);
+}
+
+void CodeEditorWidget::mouseReleaseEvent(QMouseEvent *event)
+{
+    QPlainTextEdit::mouseReleaseEvent(event);
 }

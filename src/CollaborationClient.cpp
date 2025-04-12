@@ -1,31 +1,15 @@
+// CollaborationClient.cpp
 #include "CollaborationClient.h"
 #include "User.h"
 #include "Document.h"
+#include "EditOperation.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QDebug>
-
-QJsonObject EditOperation::toJson() const {
-    QJsonObject json;
-    json["userId"] = userId;
-    json["documentId"] = documentId;
-    json["position"] = position;
-    json["insertion"] = insertion;
-    json["deletionLength"] = deletionLength;
-    return json;
-}
-
-EditOperation EditOperation::fromJson(const QJsonObject& json) {
-    EditOperation op;
-    op.userId = json["userId"].toString();
-    op.documentId = json["documentId"].toString();
-    op.position = json["position"].toInt();
-    op.insertion = json["insertion"].toString();
-    op.deletionLength = json["deletionLength"].toInt();
-    return op;
-}
+#include <QTimer>
+#include <QDateTime>
 
 CollaborationClient::CollaborationClient(QObject *parent)
     : QObject(parent)
@@ -111,10 +95,15 @@ void CollaborationClient::joinDocument(const QString& documentId)
         isDocumentJoined = true;
         emit documentJoined(documentId);
         
+        // For the prototype, simulate successful join
+    QTimer::singleShot(500, [this, documentId]() {
+        isDocumentJoined = true;
+        emit documentJoined(documentId);
+
         // Simulate other users already in the document
         QStringList userIds = {"user1", "user2", "user3"};
         QStringList usernames = {"Alice", "Bob", "Charlie"};
-        
+
         // Filter out the current user
         for (int i = 0; i < userIds.size(); i++) {
             if (currentUser && userIds[i] == currentUser->getUserId()) {
@@ -123,18 +112,18 @@ void CollaborationClient::joinDocument(const QString& documentId)
                 i--;
             }
         }
-        
+
         // Randomly select 1-2 users to be in the document
-        int numUsers = 1 + (rand() % 2); // 1 or 2 users
+        int numUsers = 1 + QRandomGenerator::global()->bounded(2); // Replace qrand
         for (int i = 0; i < numUsers && i < userIds.size(); i++) {
             // Add user to connected users
             connectedUsers[userIds[i]] = usernames[i];
-            
+
             // Emit signal
             emit userConnected(userIds[i], usernames[i]);
-            
+
             // Simulate initial cursor position
-            int randomPos = rand() % 100;
+            int randomPos = QRandomGenerator::global()->bounded(100); // Replace qrand
             emit cursorPositionReceived(userIds[i], usernames[i], randomPos);
         }
     });

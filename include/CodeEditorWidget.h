@@ -1,3 +1,4 @@
+// CodeEditorWidget.h
 #ifndef CODEEDITORWIDGET_H
 #define CODEEDITORWIDGET_H
 
@@ -9,6 +10,8 @@
 class QSyntaxHighlighter;
 class Document;
 class CollaborationManager;
+class QPaintEvent;
+class QResizeEvent;
 
 struct RemoteCursor {
     QString userId;
@@ -29,7 +32,7 @@ public:
     void setCollaborationManager(std::shared_ptr<CollaborationManager> manager);
     void setLanguage(const QString& language);
     void highlightSyntax();
-    
+
     void updateRemoteCursor(const QString& userId, const QString& username, int position);
     void removeRemoteCursor(const QString& userId);
 
@@ -42,6 +45,7 @@ protected:
     void keyPressEvent(QKeyEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private slots:
     void onTextChanged();
@@ -51,41 +55,38 @@ private slots:
     void updateLineNumberArea(const QRect &rect, int dy);
 
 private:
-    class LineNumberArea;
-    
-    void createLineNumberArea();
-    void setupDocument();
-    void setupSyntaxHighlighter();
+    class LineNumberArea : public QWidget
+    {
+    public:
+        LineNumberArea(CodeEditorWidget *editor) : QWidget(editor), codeEditor(editor) {}
+
+        QSize sizeHint() const override {
+            return QSize(codeEditor->lineNumberAreaWidth(), 0);
+        }
+
+    protected:
+        void paintEvent(QPaintEvent *event) override {
+            codeEditor->lineNumberAreaPaintEvent(event);
+        }
+
+    private:
+        CodeEditorWidget *codeEditor;
+    };
+
     int lineNumberAreaWidth() const;
-    
-    std::unique_ptr<LineNumberArea> lineNumberArea;
+    void lineNumberAreaPaintEvent(QPaintEvent *event);
+
+    LineNumberArea *lineNumberArea;
     std::shared_ptr<Document> currentDocument;
     std::shared_ptr<CollaborationManager> collaborationManager;
     QSyntaxHighlighter* syntaxHighlighter;
     QString currentLanguage;
-    
+
     // Remote cursors for visualization
     QMap<QString, RemoteCursor> remoteCursors;
-    
+
     // Track local changes to avoid loops
     bool ignoreChanges;
-};
-
-// Inner class for line numbers display
-class CodeEditorWidget::LineNumberArea : public QWidget
-{
-public:
-    LineNumberArea(CodeEditorWidget *editor) : QWidget(editor), editor(editor) {}
-    
-    QSize sizeHint() const override {
-        return QSize(editor->lineNumberAreaWidth(), 0);
-    }
-
-protected:
-    void paintEvent(QPaintEvent *event) override;
-
-private:
-    CodeEditorWidget *editor;
 };
 
 #endif // CODEEDITORWIDGET_H

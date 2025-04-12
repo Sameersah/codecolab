@@ -1,3 +1,4 @@
+// CollaborationClient.h
 #ifndef COLLABORATIONCLIENT_H
 #define COLLABORATIONCLIENT_H
 
@@ -7,22 +8,12 @@
 #include <QJsonObject>
 #include <QString>
 #include <QMap>
+#include <QRandomGenerator> // Add for Qt 6
 #include <memory>
+#include "EditOperation.h" // Include the EditOperation header
 
 class User;
 class Document;
-
-// Edit operation structure (similar to CollaborationManager::EditOperation)
-struct EditOperation {
-    QString userId;
-    QString documentId;
-    int position;
-    QString insertion;
-    int deletionLength;
-    
-    QJsonObject toJson() const;
-    static EditOperation fromJson(const QJsonObject& json);
-};
 
 class CollaborationClient : public QObject
 {

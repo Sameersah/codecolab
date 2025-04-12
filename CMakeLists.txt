@@ -6,45 +6,52 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Include Qt
-find_package(Qt5 COMPONENTS Core Widgets WebSockets REQUIRED)
+find_package(Qt6 COMPONENTS Core Widgets WebSockets REQUIRED)
 
 # Set automoc for Qt
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
+set(CMAKE_AUTOUIC_SEARCH_PATHS ${CMAKE_CURRENT_SOURCE_DIR}/forms)
+
+
 # Include directories
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Source files
 set(SOURCES
-        main.cpp
-        MainWindow.cpp
-        CodeEditorWidget.cpp
-        SyntaxHighlighter.cpp
-        LoginDialog.cpp
-        Document.cpp
-        User.cpp
-        CollaborationClient.cpp
-        CollaborationManager.cpp
+        src/main.cpp
+        src/MainWindow.cpp
+        src/CodeEditorWidget.cpp
+        src/SyntaxHighlighter.cpp
+        src/LoginDialog.cpp
+        src/Document.cpp
+        src/User.cpp
+        src/CollaborationClient.cpp
+        src/CollaborationManager.cpp
+        src/EditOperation.cpp
 )
 
 # Header files
 set(HEADERS
-        MainWindow.h
-        CodeEditorWidget.h
-        SyntaxHighlighter.h
-        LoginDialog.h
-        Document.h
-        User.h
-        CollaborationClient.h
-        CollaborationManager.h
+        include/MainWindow.h
+        include/CodeEditorWidget.h
+        include/SyntaxHighlighter.h
+        include/LoginDialog.h
+        include/Document.h
+        include/User.h
+        include/CollaborationClient.h
+        include/CollaborationManager.h
+        include/EditOperation.h
 )
 
 # UI files
 set(UI_FILES
-        MainWindow.ui
-        LoginDialog.ui
+        forms/MainWindow.ui
+        forms/LoginDialog.ui
 )
 
 # Add resources
@@ -57,9 +64,9 @@ add_executable(codecolab ${SOURCES} ${HEADERS} ${UI_FILES} ${RESOURCE_FILES})
 
 # Link Qt libraries
 target_link_libraries(codecolab PRIVATE
-        Qt5::Core
-        Qt5::Widgets
-        Qt5::WebSockets
+        Qt6::Core
+        Qt6::Widgets
+        Qt6::WebSockets
 )
 
 # Install

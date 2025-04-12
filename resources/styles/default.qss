@@ -1,0 +1,4 @@
+/* default.qss */
+QWidget {
+    background-color: white;
+}
