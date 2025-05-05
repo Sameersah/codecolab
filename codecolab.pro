@@ -1,4 +1,4 @@
-QT       += core gui websockets
+QT       += core gui websockets network
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -23,7 +23,8 @@ SOURCES += \
     src/CollaborationClient.cpp \
     src/CollaborationManager.cpp \
     src/CollaborationServer.cpp \
-    src/EditOperation.cpp
+    src/EditOperation.cpp \
+    src/UserStorage.cpp
 
 HEADERS += \
     include/MainWindow.h \
@@ -35,7 +36,8 @@ HEADERS += \
     include/CollaborationClient.h \
     include/CollaborationManager.h \
     include/CollaborationServer.h \
-    include/EditOperation.h
+    include/EditOperation.h \
+    include/UserStorage.h
 
 FORMS += \
     forms/MainWindow.ui \
