@@ -653,8 +653,6 @@ void MainWindow::onSendChatMessage()
         // Send message through collaboration client
         if (collaborationClient && collaborationClient->isConnected()) {
             collaborationClient->sendChatMessage(message);
-            // Display message locally
-            onChatMessageReceived(currentUser->getUserId(), currentUser->getUsername(), message);
         }
     }
 }
