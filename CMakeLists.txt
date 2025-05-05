@@ -62,7 +62,10 @@ set(RESOURCE_FILES
 )
 
 # Create executable
-add_executable(codecolab ${SOURCES} ${HEADERS} ${UI_FILES} ${RESOURCE_FILES})
+add_executable(codecolab ${SOURCES} ${HEADERS} ${UI_FILES} ${RESOURCE_FILES}
+    src/users.json
+    include/UserStorage.h
+    src/UserStorage.cpp)
 
 # Link Qt libraries
 target_link_libraries(codecolab PRIVATE

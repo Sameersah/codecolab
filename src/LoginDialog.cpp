@@ -1,10 +1,13 @@
 #include "LoginDialog.h"
 #include "ui_LoginDialog.h"
 #include "User.h"
+#include "UserStorage.h"
 #include <QDateTime>
 #include <QPushButton>
 #include <QMessageBox>
 #include <QDebug>
+#include <QJsonObject>
+
 
 LoginDialog::LoginDialog(QWidget *parent) :
     QDialog(parent),
@@ -125,43 +128,44 @@ void LoginDialog::validateInput()
 
 bool LoginDialog::login(const QString& username, const QString& password)
 {
-    // In a real implementation, we would verify credentials against a database
-    // For the prototype, we'll accept specific test accounts
-    
-    if ((username == "user1" && password == "pass1") || 
-        (username == "user2" && password == "pass2")) {
-        
-        // Create a user object
-        user = std::make_shared<RegisteredUser>(
-            username, // Use username as ID for the prototype
-            username,
-            username + "@codecolab.com" // Dummy email
-        );
-        
-        // Authenticate and create session
-        if (user->authenticate(password) && user->manageSession()) {
-            return true;
+    QJsonObject users = UserStorage::readUsersFromFile();
+
+    if (users.contains(username)) {
+        QJsonObject userInfo = users[username].toObject();
+        if (userInfo["password"].toString() == password) {
+            QString email = userInfo["email"].toString();
+            user = std::make_shared<RegisteredUser>(username, username, email);
+            return user->manageSession(); // Simulated session
         }
     }
-    
+
     return false;
 }
 
+
 bool LoginDialog::registerUser(const QString& username, const QString& email, const QString& password)
 {
-    // In a real implementation, we would store the user in a database
-    // For the prototype, we'll just create the user object
-    
-    // Create a user object
-    user = std::make_shared<RegisteredUser>(
-        username, // Use username as ID for the prototype
-        username,
-        email
-    );
-    
-    // For the prototype, registration always succeeds
+    QJsonObject users = UserStorage::readUsersFromFile();
+
+    if (users.contains(username)) {
+        return false; // User already exists
+    }
+
+    QJsonObject newUser;
+    newUser["email"] = email;
+    newUser["password"] = password;
+
+    users[username] = newUser;
+
+    if (!UserStorage::writeUsersToFile(users)) {
+        return false;
+    }
+
+    // Set the user so MainWindow gets the new user
+    user = std::make_shared<RegisteredUser>(username, username, email);
     return true;
 }
+
 
 bool LoginDialog::loginAsGuest(const QString& name)
 {
