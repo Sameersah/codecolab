@@ -50,7 +50,16 @@ CodeEditorWidget::~CodeEditorWidget()
 void CodeEditorWidget::setDocument(std::shared_ptr<Document> doc)
 {
     currentDocument = doc;
+    qDebug() << "Setting document:" << currentDocument->getId();
+    qDebug() << "Document content:" << currentDocument->getContent();
+    qDebug() << "Doc content:" << doc->getContent();
     if (currentDocument) {
+        // First set the content in the editor
+        ignoreChanges = true;  // Prevent triggering textChanged signal
+        setPlainText(currentDocument->getContent());
+        ignoreChanges = false;
+
+        // Then set up syntax highlighting
         if (syntaxHighlighter) {
             delete syntaxHighlighter;
             syntaxHighlighter = nullptr;
@@ -62,6 +71,8 @@ void CodeEditorWidget::setDocument(std::shared_ptr<Document> doc)
         // Call the method on our custom SyntaxHighlighter class
         dynamic_cast<SyntaxHighlighter*>(syntaxHighlighter)->setLanguage(currentDocument->getLanguage());
     }
+    qDebug() << "Setting document done";
+    qDebug() << "Document content:" << currentDocument->getContent();
 }
 
 void CodeEditorWidget::setCollaborationManager(std::shared_ptr<CollaborationManager> manager)
@@ -289,26 +300,29 @@ void CodeEditorWidget::onTextChanged()
     ignoreChanges = true;
     QString content = toPlainText();
 
-    // Notify about content changes
-    emit editorContentChanged(content);
+    // Only update if content actually changed
+    if (content != currentDocument->getContent()) {
+        // Notify about content changes
+        emit editorContentChanged(content);
 
-    // Update document content
-    currentDocument->setContent(content);
+        // Update document content
+        currentDocument->setContent(content);
 
-    // Create an edit operation
-    if (collaborationManager) {
-        EditOperation op;
-        op.userId = "local";
-        op.documentId = currentDocument->getId();
-        op.position = textCursor().position();
-        
-        // For the prototype, we'll just send the entire content as an insertion
-        // In a real implementation, we would calculate the actual changes
-        op.insertion = content;
-        op.deletionLength = 0;
+        // Create an edit operation
+        if (collaborationManager) {
+            EditOperation op;
+            op.userId = "local";
+            op.documentId = currentDocument->getId();
+            op.position = textCursor().position();
+            
+            // For the prototype, we'll just send the entire content as an insertion
+            // In a real implementation, we would calculate the actual changes
+            op.insertion = content;
+            op.deletionLength = 0;
 
-        // Send the operation to the collaboration manager
-        collaborationManager->synchronizeChanges(op);
+            // Send the operation to the collaboration manager
+            collaborationManager->synchronizeChanges(op);
+        }
     }
 
     ignoreChanges = false;

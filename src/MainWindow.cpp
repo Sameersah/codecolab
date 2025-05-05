@@ -3,6 +3,7 @@
 #include "CodeEditorWidget.h"
 #include "LoginDialog.h"
 #include "CollaborationClient.h"
+#include "DocumentStorage.h"
 
 #include <QSplitter>
 #include <QTextEdit>
@@ -20,6 +21,9 @@
 #include <QFrame>
 #include <QTimer>
 #include <QKeyEvent>
+#include <QDialogButtonBox>
+#include <QComboBox>
+#include <QDebug>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -88,6 +92,15 @@ void MainWindow::setupConnections()
             
     connect(collaborationClient.get(), &CollaborationClient::userDisconnected,
             this, &MainWindow::onUserDisconnected);
+            
+    connect(collaborationClient.get(), &CollaborationClient::contentReceived,
+            this, [this](const QString& content) {
+                if (currentDocument && codeEditor) {
+                    qDebug() << "Received latest content, length:" << content.length();
+                    codeEditor->setPlainText(content);
+                    currentDocument->setContent(content);
+                }
+            });
 
     connect(collaborationClient.get(), &CollaborationClient::chatMessageReceived,
             this, &MainWindow::onChatMessageReceived);
@@ -172,28 +185,7 @@ void MainWindow::setupUI()
     statusBar()->addWidget(statusLabel.get());
 
     // Setup menus with newer Qt 6 syntax
-    QMenu* fileMenu = menuBar()->addMenu("&File");
-    QAction* newAction = new QAction("New", this);
-    newAction->setShortcut(QKeySequence::New);
-    connect(newAction, &QAction::triggered, this, &MainWindow::onNewDocument);
-    fileMenu->addAction(newAction);
-
-    QAction* openAction = new QAction("Open", this);
-    openAction->setShortcut(QKeySequence::Open);
-    connect(openAction, &QAction::triggered, this, &MainWindow::onOpenDocument);
-    fileMenu->addAction(openAction);
-
-    QAction* saveAction = new QAction("Save", this);
-    saveAction->setShortcut(QKeySequence::Save);
-    connect(saveAction, &QAction::triggered, this, &MainWindow::onSaveDocument);
-    fileMenu->addAction(saveAction);
-
-    fileMenu->addSeparator();
-
-    QAction* exitAction = new QAction("Exit", this);
-    exitAction->setShortcut(QKeySequence::Quit);
-    connect(exitAction, &QAction::triggered, this, &QWidget::close);
-    fileMenu->addAction(exitAction);
+    setupFileMenu();
 
     QMenu* editMenu = menuBar()->addMenu("&Edit");
     QAction* cutAction = new QAction("Cut", this);
@@ -241,48 +233,89 @@ void MainWindow::setupUI()
     setWindowTitle("CodeColab - Collaborative Code Editor");
 }
 
+void MainWindow::setupFileMenu()
+{
+    QMenu *fileMenu = menuBar()->addMenu(tr("&File"));
+    
+    QAction *newAct = new QAction(tr("&New"), this);
+    newAct->setShortcuts(QKeySequence::New);
+    newAct->setStatusTip(tr("Create a new document"));
+    connect(newAct, &QAction::triggered, this, &MainWindow::onNewDocument);
+    fileMenu->addAction(newAct);
+    
+    QAction *openAct = new QAction(tr("&Open..."), this);
+    openAct->setShortcuts(QKeySequence::Open);
+    openAct->setStatusTip(tr("Open an existing document"));
+    connect(openAct, &QAction::triggered, this, &MainWindow::onOpenDocument);
+    fileMenu->addAction(openAct);
+    
+    QAction *shareAct = new QAction(tr("&Share..."), this);
+    shareAct->setStatusTip(tr("Share this document with other users"));
+    connect(shareAct, &QAction::triggered, this, &MainWindow::onShareDocument);
+    fileMenu->addAction(shareAct);
+    
+    QAction *openSharedAct = new QAction(tr("Open &Shared..."), this);
+    openSharedAct->setStatusTip(tr("Open a document shared with you"));
+    connect(openSharedAct, &QAction::triggered, this, &MainWindow::onOpenSharedDocument);
+    fileMenu->addAction(openSharedAct);
+
+    // Add separator
+    fileMenu->addSeparator();
+
+    // Add public access toggle
+    QAction *togglePublicAct = new QAction(tr("Make &Public"), this);
+    togglePublicAct->setCheckable(true);
+    togglePublicAct->setStatusTip(tr("Allow anyone to view this document in read-only mode"));
+    connect(togglePublicAct, &QAction::triggered, this, &MainWindow::onTogglePublicAccess);
+    fileMenu->addAction(togglePublicAct);
+    publicAccessAction.reset(togglePublicAct);  // Store the action for later use
+}
+
 void MainWindow::showLoginDialog()
 {
     LoginDialog dialog(this);
     if (dialog.exec() == QDialog::Accepted) {
         currentUser = dialog.getUser();
         if (currentUser) {
+            qDebug() << "User logged in:" << currentUser->getUsername() 
+                     << "(ID:" << currentUser->getUserId() << ")";
+            
             // Set the user in the collaboration client
             collaborationClient->setUser(currentUser);
             
             updateStatusBar();
             updateTitle();
             
-            // Create a default document for the user
-            currentDocument = std::make_shared<Document>(
-                "shared_doc",  // Use a fixed ID for the shared document
-                "Test Document.cpp",
-                currentUser);
+            // Show document selection dialog
+            QDialog docDialog(this);
+            docDialog.setWindowTitle("Document Selection");
+            QVBoxLayout* layout = new QVBoxLayout(&docDialog);
 
-            // Set initial content
-            QString initialContent = "// Test Document.cpp\n"
-                                   "// Shared document for collaboration\n\n"
-                                   "#include <iostream>\n\n"
-                                   "int main() {\n"
-                                   "    std::cout << \"Hello, World!\" << std::endl;\n"
-                                   "    return 0;\n"
-                                   "}\n";
-            
-            currentDocument->setContent(initialContent);
-            currentDocument->setLanguage("C++");
+            // Add buttons for different options
+            QPushButton* newDocButton = new QPushButton("Create New Document");
+            QPushButton* openSharedButton = new QPushButton("Open Shared Document");
+            QPushButton* cancelButton = new QPushButton("Cancel");
 
-            // Set up editor
-            codeEditor->setDocument(currentDocument);
-            codeEditor->setPlainText(initialContent);
-            codeEditor->setLanguage("C++");
+            layout->addWidget(newDocButton);
+            layout->addWidget(openSharedButton);
+            layout->addWidget(cancelButton);
 
-            // Update UI
-            updateTitle();
-            updateUserList();
+            // Connect buttons
+            connect(newDocButton, &QPushButton::clicked, [&]() {
+                docDialog.accept();
+                onNewDocument();
+            });
+            connect(openSharedButton, &QPushButton::clicked, [&]() {
+                docDialog.accept();
+                onOpenSharedDocument();
+            });
+            connect(cancelButton, &QPushButton::clicked, &docDialog, &QDialog::reject);
 
-            // Clear chat
-            chatBox->clear();
-            chatInput->clear();
+            if (docDialog.exec() == QDialog::Rejected) {
+                qDebug() << "User cancelled document selection";
+                close();
+                return;
+            }
 
             // Try to connect to the collaboration server
             if (collaborationClient) {
@@ -430,10 +463,14 @@ void MainWindow::onNewDocument()
                                          "Untitled.cpp", &ok);
     if (ok && !title.isEmpty()) {
         // Create a new document
-        currentDocument = std::make_shared<Document>(
-            "doc_" + QString::number(QDateTime::currentSecsSinceEpoch()),
-            title,
-            currentUser);
+        QString documentId = "doc_" + QString::number(QDateTime::currentSecsSinceEpoch());
+        currentDocument = std::make_shared<Document>(documentId, title, currentUser);
+        
+        qDebug() << "Created new document:"
+                 << "\n  Title:" << title
+                 << "\n  ID:" << documentId
+                 << "\n  Owner:" << currentUser->getUsername()
+                 << "\n  Owner ID:" << currentUser->getUserId();
 
         // Set initial content
         QString initialContent = "// " + title + "\n// Created by " + currentUser->getUsername() + "\n\n";
@@ -452,6 +489,13 @@ void MainWindow::onNewDocument()
         }
 
         currentDocument->setContent(initialContent);
+        qDebug() << "Set initial content and language:" << currentDocument->getLanguage();
+
+        // Save document to storage
+        if (!DocumentStorage::getInstance().saveDocument(currentDocument)) {
+            QMessageBox::warning(this, "Save Error", "Failed to save document to storage.");
+            return;
+        }
 
         // Set up editor
         codeEditor->setDocument(currentDocument);
@@ -559,16 +603,159 @@ void MainWindow::onShareDocument()
         return;
     }
 
+    // Create dialog for sharing
+    QDialog dialog(this);
+    dialog.setWindowTitle("Share Document");
+    QVBoxLayout* layout = new QVBoxLayout(&dialog);
+
+    // Add document ID display
+    QLabel* idLabel = new QLabel("Document ID: " + currentDocument->getId());
+    layout->addWidget(idLabel);
+
+    // Add user input
+    QLineEdit* userInput = new QLineEdit();
+    userInput->setPlaceholderText("Enter user ID or email");
+    layout->addWidget(userInput);
+
+    // Add access level selection
+    QComboBox* accessLevel = new QComboBox();
+    accessLevel->addItem("Read Only", static_cast<int>(Document::AccessLevel::ReadOnly));
+    accessLevel->addItem("Edit", static_cast<int>(Document::AccessLevel::Edit));
+    layout->addWidget(accessLevel);
+
+    // Add buttons
+    QDialogButtonBox* buttonBox = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttonBox);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        QString userId = userInput->text().trimmed();
+        Document::AccessLevel level = static_cast<Document::AccessLevel>(
+            accessLevel->currentData().toInt());
+
+        qDebug() << "Attempting to share document" << currentDocument->getId() 
+                 << "with user" << userId << "at level" 
+                 << (level == Document::AccessLevel::Edit ? "edit" : "read-only");
+
+        if (currentDocument->shareWith(userId, level)) {
+            // Save the document after sharing
+            if (DocumentStorage::getInstance().saveDocument(currentDocument)) {
+                qDebug() << "Successfully shared document with user";
+                QMessageBox::information(this, "Document Shared",
+                    "Document shared successfully with " + userId);
+            } else {
+                qDebug() << "Failed to save document after sharing";
+                QMessageBox::warning(this, "Share Error",
+                    "Document was shared but failed to save changes.");
+            }
+        } else {
+            qDebug() << "Failed to share document with user";
+            QMessageBox::warning(this, "Share Failed",
+                "Failed to share document with " + userId);
+        }
+    }
+}
+
+void MainWindow::onOpenSharedDocument()
+{
+    if (!currentUser) {
+        QMessageBox::warning(this, "Not Logged In", "You must be logged in to open shared documents.");
+        return;
+    }
+
     bool ok;
-    QString collaboratorEmail = QInputDialog::getText(this, "Share Document",
-                                                    "Enter collaborator's email:", QLineEdit::Normal,
-                                                    "", &ok);
-    if (ok && !collaboratorEmail.isEmpty()) {
-        // In a real implementation, we would check if the user exists and share the document
-        // For the prototype, we'll simulate successful sharing
-        QMessageBox::information(this, "Document Shared",
-                               "Document shared with " + collaboratorEmail + ".\n\n"
-                               "For the prototype, this is a simulated action.");
+    QString documentId = QInputDialog::getText(this, "Open Shared Document",
+        "Enter Document ID:", QLineEdit::Normal, "", &ok);
+    
+    if (ok && !documentId.isEmpty()) {
+        qDebug() << "Attempting to open shared document:"
+                 << "\n  Document ID:" << documentId
+                 << "\n  User:" << currentUser->getUsername()
+                 << "\n  User ID:" << currentUser->getUserId();
+        
+        // Check if we already have this document open
+        if (currentDocument && currentDocument->getId() == documentId) {
+            qDebug() << "Document already open";
+            QMessageBox::information(this, "Document Already Open",
+                "This document is already open.");
+            return;
+        }
+        
+        // Try to load the document from storage
+        std::shared_ptr<Document> doc = DocumentStorage::getInstance().loadDocument(documentId);
+        
+        if (!doc) {
+            qDebug() << "Document not found in storage";
+            QMessageBox::warning(this, "Document Not Found",
+                "Could not find the document. Please make sure the document ID is correct.");
+            return;
+        }
+        
+        qDebug() << "Found document in storage:"
+                 << "\n  Title:" << doc->getTitle()
+                 << "\n  Owner:" << (doc->getOwner() ? doc->getOwner()->getUsername() : "Unknown")
+                 << "\n  Content length:" << doc->getContent().length()
+                 << "\n  Content:" << doc->getContent();
+        
+        // Check access level
+        Document::AccessLevel accessLevel = doc->getAccessLevel(currentUser->getUserId());
+        qDebug() << "Access check:"
+                 << "\n  User:" << currentUser->getUsername()
+                 << "\n  Access Level:" << (accessLevel == Document::AccessLevel::Edit ? "Edit" :
+                                          accessLevel == Document::AccessLevel::ReadOnly ? "ReadOnly" : "None");
+        
+        if (accessLevel == Document::AccessLevel::None) {
+            qDebug() << "Access denied for user" << currentUser->getUsername();
+            QMessageBox::warning(this, "Access Denied",
+                "You don't have access to this document.\n"
+                "Please ask the document owner to share it with you.");
+            return;
+        }
+        
+        // Set read-only if user only has read access
+        bool isReadOnly = (accessLevel == Document::AccessLevel::ReadOnly);
+        qDebug() << "Setting document read-only:" << isReadOnly;
+        
+        // First set up the editor with the document
+        codeEditor->setDocument(doc);
+        codeEditor->setReadOnly(isReadOnly);
+        codeEditor->setLanguage(doc->getLanguage());
+        
+        // Get the content from the document
+        QString content = doc->getContent();
+        qDebug() << "Setting editor content, length:" << content.length();
+        codeEditor->setPlainText(content);
+        
+        // Then set up the collaboration client
+        if (collaborationClient) {
+            collaborationClient->setDocument(doc);
+            if (collaborationClient->isConnected()) {
+                collaborationClient->joinDocument(documentId);
+                // Request latest content from collaboration server
+                collaborationClient->requestLatestContent(documentId);
+            }
+        }
+        
+        // Update UI
+        currentDocument = doc;
+        updateTitle();
+        updateUserList();
+        
+        // Clear chat
+        chatBox->clear();
+        chatInput->clear();
+        
+        // Show access level in status bar
+        QString accessText = isReadOnly ? "Read-only access" : "Edit access";
+        statusLabel->setText(accessText);
+        
+        qDebug() << "Successfully opened shared document:"
+                 << "\n  Document ID:" << documentId
+                 << "\n  Access Level:" << accessText
+                 << "\n  Owner:" << (doc->getOwner() ? doc->getOwner()->getUsername() : "Unknown")
+                 << "\n  Content length:" << content.length();
     }
 }
 
@@ -611,6 +798,7 @@ void MainWindow::onCursorPositionChanged()
 
     // Send cursor position to other users
     if (collaborationClient && collaborationClient->isConnected()) {
+        qDebug() << "Sending cursor position:" << position << "for user" << currentUser->getUsername();
         collaborationClient->sendCursorPosition(position);
     }
 }
@@ -622,10 +810,31 @@ void MainWindow::onTextChanged()
     // Update document content
     QString newContent = codeEditor->toPlainText();
     if (newContent != currentDocument->getContent()) {
+        qDebug() << "Document content changed:"
+                 << "\n  Document ID:" << currentDocument->getId()
+                 << "\n  User:" << currentUser->getUsername()
+                 << "\n  Content length:" << newContent.length();
+        
         currentDocument->setContent(newContent);
 
-        // In a real implementation, we would send these changes to other users
-        // For the prototype, we'll just mark the document as modified
+        // Save changes to storage
+        if (!DocumentStorage::getInstance().saveDocument(currentDocument)) {
+            qDebug() << "Failed to save document changes";
+            QMessageBox::warning(this, "Save Error", "Failed to save document changes.");
+        }
+
+        // Send changes through collaboration client
+        if (collaborationClient && collaborationClient->isConnected()) {
+            EditOperation op;
+            op.userId = currentUser->getUserId();
+            op.documentId = currentDocument->getId();
+            op.position = 0;
+            op.insertion = newContent;
+            op.deletionLength = currentDocument->getContent().length();
+            collaborationClient->sendEdit(op);
+        }
+
+        // Mark the document as modified
         setWindowModified(true);
     }
 }
@@ -657,6 +866,34 @@ void MainWindow::onSendChatMessage()
     }
 }
 
+void MainWindow::onTogglePublicAccess()
+{
+    if (!currentDocument || !currentUser) {
+        QMessageBox::warning(this, "No Document", "Please open a document first.");
+        return;
+    }
+
+    // Only document owner can toggle public access
+    if (currentDocument->getOwner()->getUserId() != currentUser->getUserId()) {
+        QMessageBox::warning(this, "Access Denied", "Only the document owner can change public access settings.");
+        return;
+    }
+
+    bool newState = publicAccessAction->isChecked();
+    currentDocument->setPublicAccess(newState);
+
+    // Save the document to persist the change
+    if (!DocumentStorage::getInstance().saveDocument(currentDocument)) {
+        QMessageBox::warning(this, "Save Error", "Failed to save document settings.");
+        return;
+    }
+
+    // Update status
+    statusBar()->showMessage(newState ? 
+        "Document is now publicly accessible" : 
+        "Document is now private", 3000);
+}
+
 void MainWindow::addDocument(std::shared_ptr<Document> document)
 {
     if (!document) return;
@@ -681,4 +918,50 @@ void MainWindow::addDocument(std::shared_ptr<Document> document)
     
     updateTitle();
     updateStatusBar();
+}
+
+void MainWindow::onUserLoggedIn(std::shared_ptr<User> user)
+{
+    if (user) {
+        currentUser = user;
+        updateStatusBar();
+        updateTitle();
+    }
+}
+
+void MainWindow::onDocumentOpened(std::shared_ptr<Document> document)
+{
+    if (document) {
+        currentDocument = document;
+        codeEditor->setDocument(document);
+        codeEditor->setPlainText(document->getContent());
+        codeEditor->setLanguage(document->getLanguage());
+        updateTitle();
+        updateUserList();
+    }
+}
+
+void MainWindow::onDocumentShared(const QString& userId, bool canEdit)
+{
+    if (currentDocument) {
+        Document::AccessLevel level = canEdit ? Document::AccessLevel::Edit : Document::AccessLevel::ReadOnly;
+        currentDocument->shareWith(userId, level);
+        updateUserList();
+    }
+}
+
+void MainWindow::onPublicAccessChanged(bool isPublic)
+{
+    if (currentDocument) {
+        currentDocument->setPublicAccess(isPublic);
+        updateStatusBar();
+    }
+}
+
+void MainWindow::onDocumentAccessChanged(const QString& userId, Document::AccessLevel level)
+{
+    if (currentDocument) {
+        currentDocument->shareWith(userId, level);
+        updateUserList();
+    }
 }

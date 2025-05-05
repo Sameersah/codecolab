@@ -18,6 +18,10 @@ class CodeEditorWidget;
 class LoginDialog;
 class QTextEdit;
 class QSplitter;
+class QPlainTextEdit;
+class QLineEdit;
+class QListWidget;
+class QAction;
 
 namespace Ui {
     class MainWindow;
@@ -34,11 +38,12 @@ public:
     // Add document to the editor
     void addDocument(std::shared_ptr<Document> document);
 
-    private slots:
-        void onLogin();
+private slots:
+    void onLogin();
     void onLogout();
     void onNewDocument();
     void onOpenDocument();
+    void onOpenSharedDocument();
     void onSaveDocument();
     void onShareDocument();
     void onTextChanged();
@@ -47,14 +52,25 @@ public:
     void onUserConnected(const QString& userId, const QString& username);
     void onUserDisconnected(const QString& userId);
     void onChatMessageReceived(const QString& userId, const QString& username, const QString& message);
+    void onTogglePublicAccess();
+    void showLoginDialog();
+    void onUserLoggedIn(std::shared_ptr<User> user);
+    void onDocumentOpened(std::shared_ptr<Document> document);
+    void onDocumentShared(const QString& userId, bool canEdit);
+    void onDocumentAccessChanged(const QString& userId, Document::AccessLevel level);
+    void onPublicAccessChanged(bool isPublic);
 
 private:
     void setupUI();
     void setupConnections();
+    void setupFileMenu();
+    void setupEditMenu();
+    void setupViewMenu();
     void updateTitle();
     void updateStatusBar();
     void updateUserList();
-    void showLoginDialog();
+    void removeDocument(const QString& documentId);
+    void updateDocumentAccess(const QString& documentId, const QString& userId, Document::AccessLevel level);
     bool eventFilter(QObject *obj, QEvent *event) override;
 
     Ui::MainWindow *ui;
@@ -64,6 +80,10 @@ private:
     std::unique_ptr<QLabel> statusLabel;
     std::unique_ptr<QSplitter> mainSplitter;
     std::unique_ptr<QSplitter> rightSplitter;
+    std::unique_ptr<QPlainTextEdit> codeEditorPlain;
+    std::unique_ptr<QLineEdit> chatInputLine;
+    std::unique_ptr<QListWidget> userList;
+    std::unique_ptr<QAction> publicAccessAction;
 
     // Core objects
     std::shared_ptr<User> currentUser;

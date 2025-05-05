@@ -6,6 +6,7 @@
 #include <QVector>
 #include <QDateTime>
 #include <memory>
+#include "User.h"
 
 class User;
 
@@ -22,6 +23,12 @@ class Document : public QObject
     Q_OBJECT
 
 public:
+    enum class AccessLevel {
+        None,
+        ReadOnly,
+        Edit
+    };
+
     Document(const QString& id, const QString& title, std::shared_ptr<User> owner);
     ~Document();
 
@@ -30,10 +37,14 @@ public:
     QString getContent() const { return content; }
     QString getLanguage() const { return language; }
     std::shared_ptr<User> getOwner() const { return owner; }
+    QDateTime getLastModified() const { return lastModified; }
+    QMap<QString, AccessLevel> getSharedWith() const { return sharedUsers; }
+    bool isPubliclyAccessible() const { return isPublic; }
     
     void setTitle(const QString& newTitle);
     void setContent(const QString& newContent);
     void setLanguage(const QString& newLanguage);
+    void setPublicAccess(bool isPublic);
     
     bool editContent(const QString& newContent, std::shared_ptr<User> editor);
     bool updateContent(const QString& delta, int position, std::shared_ptr<User> editor);
@@ -48,6 +59,13 @@ public:
     QVector<DocumentVersion> getVersionHistory() const;
     bool restoreVersion(int versionIndex);
 
+    // Access control methods
+    AccessLevel getAccessLevel(const QString& userId) const;
+    bool shareWith(const QString& userId, AccessLevel level);
+    bool revokeAccess(const QString& userId);
+    bool canEdit(const QString& userId) const;
+    bool canRead(const QString& userId) const;
+
 signals:
     void contentChanged(const QString& newContent);
     void titleChanged(const QString& newTitle);
@@ -55,6 +73,7 @@ signals:
     void collaboratorAdded(std::shared_ptr<User> user);
     void collaboratorRemoved(std::shared_ptr<User> user);
     void versionSaved(const DocumentVersion& version);
+    void publicAccessChanged(bool isPublic);
 
 private:
     QString documentId;
@@ -62,6 +81,9 @@ private:
     QString content;
     QString language;
     std::shared_ptr<User> owner;
+    QDateTime lastModified;
+    QMap<QString, AccessLevel> sharedUsers; // userId -> AccessLevel
+    bool isPublic; // Flag for public read-only access
     
     QMap<QString, bool> collaborators; // userId -> canEdit
     QVector<DocumentVersion> versionHistory;

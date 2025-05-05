@@ -175,6 +175,21 @@ void CollaborationClient::sendChatMessage(const QString& message)
     sendMessage("chat", payload);
 }
 
+void CollaborationClient::requestLatestContent(const QString& documentId)
+{
+    if (!isDocumentJoined) {
+        emit error("Not joined to a document");
+        return;
+    }
+    
+    // Construct a request message
+    QJsonObject payload;
+    payload["documentId"] = documentId;
+    
+    // Send the message
+    sendMessage("request_content", payload);
+}
+
 void CollaborationClient::onConnected()
 {
     emit connected();
@@ -219,6 +234,9 @@ void CollaborationClient::onTextMessageReceived(const QString& message)
     } else if (type == "user_left") {
         QString userId = payload["userId"].toString();
         emit userDisconnected(userId);
+    } else if (type == "content") {
+        QString content = payload["content"].toString();
+        emit contentReceived(content);
     }
 }
 

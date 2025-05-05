@@ -32,6 +32,7 @@ private:
     void handleEditMessage(QWebSocket *client, const QJsonObject &payload);
     void handleCursorMessage(QWebSocket *client, const QJsonObject &payload);
     void handleChatMessage(QWebSocket *client, const QJsonObject &payload);
+    void handleContentRequest(QWebSocket *client, const QJsonObject &payload);
     void broadcastToDocument(const QString &documentId, const QString &message, QWebSocket *exclude = nullptr);
 
     QWebSocketServer *server;

@@ -104,3 +104,41 @@ void CollaborationManager::processEditQueue()
         emit changesSynchronized(operation);
     }
 }
+
+void CollaborationManager::addDocument(std::shared_ptr<Document> document)
+{
+    if (!document) {
+        qDebug() << "Attempted to add null document";
+        return;
+    }
+
+    QString documentId = document->getId();
+    if (documents.contains(documentId)) {
+        qDebug() << "Document" << documentId << "already exists";
+        return;
+    }
+
+    documents[documentId] = document;
+    qDebug() << "Added document" << documentId;
+    emit documentAdded(document);
+}
+
+void CollaborationManager::removeDocument(const QString& documentId)
+{
+    if (documents.remove(documentId) > 0) {
+        qDebug() << "Removed document" << documentId;
+        emit documentRemoved(documentId);
+    } else {
+        qDebug() << "Document" << documentId << "not found";
+    }
+}
+
+std::shared_ptr<Document> CollaborationManager::getDocument(const QString& documentId)
+{
+    return documents.value(documentId);
+}
+
+QList<std::shared_ptr<Document>> CollaborationManager::getDocuments() const
+{
+    return documents.values();
+}

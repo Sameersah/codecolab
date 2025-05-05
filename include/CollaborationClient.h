@@ -38,6 +38,7 @@ public slots:
     void sendEdit(const EditOperation& operation);
     void sendCursorPosition(int position);
     void sendChatMessage(const QString& message);
+    void requestLatestContent(const QString& documentId);
 
 signals:
     void connected();
@@ -53,6 +54,7 @@ signals:
     
     void userConnected(const QString& userId, const QString& username);
     void userDisconnected(const QString& userId);
+    void contentReceived(const QString& content);
 
 private slots:
     void onConnected();

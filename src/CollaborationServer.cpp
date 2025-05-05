@@ -1,4 +1,5 @@
 #include "CollaborationServer.h"
+#include "DocumentStorage.h"
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QDebug>
@@ -99,6 +100,8 @@ void CollaborationServer::onTextMessageReceived(const QString &message)
         handleCursorMessage(client, payload);
     } else if (type == "chat") {
         handleChatMessage(client, payload);
+    } else if (type == "request_content") {
+        handleContentRequest(client, payload);
     }
 }
 
@@ -124,7 +127,7 @@ void CollaborationServer::handleJoinMessage(QWebSocket *client, const QJsonObjec
     broadcastToDocument(documentId, QJsonDocument(notification).toJson(QJsonDocument::Compact), client);
 }
 
-void CollaborationServer::handleLeaveMessage(QWebSocket *client, const QJsonObject &payload)
+void CollaborationServer::handleLeaveMessage(QWebSocket *client, const QJsonObject &/*payload*/)
 {
     QString userId = clientUserIds.value(client);
     if (userId.isEmpty()) return;
@@ -199,6 +202,31 @@ void CollaborationServer::handleChatMessage(QWebSocket *client, const QJsonObjec
 
         broadcastToDocument(documentId, QJsonDocument(message).toJson(QJsonDocument::Compact));
     }
+}
+
+void CollaborationServer::handleContentRequest(QWebSocket *client, const QJsonObject &payload)
+{
+    QString documentId = payload["documentId"].toString();
+    QString userId = clientUserIds.value(client);
+    
+    if (userId.isEmpty() || documentId.isEmpty()) return;
+    
+    // Get the document from storage
+    std::shared_ptr<Document> doc = DocumentStorage::getInstance().loadDocument(documentId);
+    if (!doc) return;
+    
+    // Check if user has access
+    if (doc->getAccessLevel(userId) == Document::AccessLevel::None) return;
+    
+    // Send the content back to the client
+    QJsonObject message;
+    message["type"] = "content";
+    QJsonObject messagePayload;
+    messagePayload["documentId"] = documentId;
+    messagePayload["content"] = doc->getContent();
+    message["payload"] = messagePayload;
+    
+    client->sendTextMessage(QJsonDocument(message).toJson(QJsonDocument::Compact));
 }
 
 void CollaborationServer::broadcastToDocument(const QString &documentId, const QString &message, QWebSocket *exclude)
