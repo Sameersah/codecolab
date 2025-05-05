@@ -134,7 +134,8 @@ bool LoginDialog::login(const QString& username, const QString& password)
         QJsonObject userInfo = users[username].toObject();
         if (userInfo["password"].toString() == password) {
             QString email = userInfo["email"].toString();
-            user = std::make_shared<RegisteredUser>(username, username, email);
+            QString userId = "user_" + QString::number(QDateTime::currentMSecsSinceEpoch());
+            user = std::make_shared<RegisteredUser>(userId, username, email);
             return user->manageSession(); // Simulated session
         }
     }
@@ -162,7 +163,8 @@ bool LoginDialog::registerUser(const QString& username, const QString& email, co
     }
 
     // Set the user so MainWindow gets the new user
-    user = std::make_shared<RegisteredUser>(username, username, email);
+    QString userId = "user_" + QString::number(QDateTime::currentMSecsSinceEpoch());
+    user = std::make_shared<RegisteredUser>(userId, username, email);
     return true;
 }
 

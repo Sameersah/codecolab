@@ -58,27 +58,9 @@ int main(int argc, char *argv[])
         }
     }
     
-    // Create a test user
-    auto user = std::make_shared<RegisteredUser>("user1", "user1", "user1@example.com");
-    
-    // Create a test document
-    auto document = std::make_shared<Document>("test_doc_1", "Test Document", user);
-    QString documentId = document->getId();
-    
-    // Add the document to the main window
+    // Create a test document and add it to the main window
+    auto document = std::make_shared<Document>("test_doc_1", "Test Document", nullptr);
     mainWindow.addDocument(document);
-    
-    // Initialize collaboration client
-    CollaborationClient client;
-    client.setUser(user);
-    client.setDocument(document);
-    
-    // Connect to server and join document
-    if (client.connect("ws://localhost:8080")) {
-        client.joinDocument(documentId);
-    } else {
-        qDebug() << "Failed to connect to collaboration server";
-    }
     
     return app.exec();
 }

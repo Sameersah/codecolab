@@ -290,7 +290,13 @@ void MainWindow::showLoginDialog()
                 statusLabel->setText("Connecting to server...");
                 
                 // Try to connect
-                if (!collaborationClient->connect("ws://localhost:8080")) {
+                if (collaborationClient->connect("ws://localhost:8080")) {
+                    // Set the document in the collaboration client
+                    collaborationClient->setDocument(currentDocument);
+                    // Join the document
+                    collaborationClient->joinDocument(currentDocument->getId());
+                    statusLabel->setText("Connected to server");
+                } else {
                     QMessageBox::warning(this, "Connection Error",
                         "Failed to connect to the collaboration server.\n"
                         "Please make sure the server is running (start with --server flag).\n"
