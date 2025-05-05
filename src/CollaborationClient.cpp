@@ -10,6 +10,7 @@
 #include <QDebug>
 #include <QTimer>
 #include <QDateTime>
+#include <QEventLoop>
 
 CollaborationClient::CollaborationClient(QObject *parent)
     : QObject(parent)
@@ -32,36 +33,45 @@ CollaborationClient::~CollaborationClient()
 
 bool CollaborationClient::connect(const QString& url)
 {
+    if (webSocket.isValid()) {
+        webSocket.close();
+    }
+
     serverUrl = url;
+    webSocket.open(QUrl(serverUrl));
+
+    // Wait for connection with timeout
+    QEventLoop loop;
+    QTimer timer;
+    timer.setSingleShot(true);
     
-    // For the prototype, simulate successful connection
-    QTimer::singleShot(500, this, &CollaborationClient::onConnected);
+    QObject::connect(&webSocket, &QWebSocket::connected, &loop, &QEventLoop::quit);
+    QObject::connect(&webSocket, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::errorOccurred),
+            &loop, &QEventLoop::quit);
+    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
     
-    return true;
+    timer.start(5000); // 5 second timeout
+    loop.exec();
     
-    // In a real implementation, we would connect to the WebSocket server
-    // webSocket.open(QUrl(serverUrl));
-    // return true;
+    if (timer.isActive()) {
+        timer.stop();
+        return webSocket.state() == QAbstractSocket::ConnectedState;
+    } else {
+        emit error("Connection timeout");
+        return false;
+    }
 }
 
 void CollaborationClient::disconnect()
 {
-    // For the prototype, simulate disconnection
-    QTimer::singleShot(300, this, &CollaborationClient::onDisconnected);
-    
-    // In a real implementation, we would close the WebSocket connection
-    // if (webSocket.isValid()) {
-    //     webSocket.close();
-    // }
+    if (webSocket.isValid()) {
+        webSocket.close();
+    }
 }
 
 bool CollaborationClient::isConnected() const
 {
-    // For the prototype, always return true
-    return true;
-    
-    // In a real implementation, we would check the WebSocket state
-    // return webSocket.state() == QAbstractSocket::ConnectedState;
+    return webSocket.state() == QAbstractSocket::ConnectedState;
 }
 
 void CollaborationClient::setUser(std::shared_ptr<User> user)
@@ -88,36 +98,9 @@ void CollaborationClient::joinDocument(const QString& documentId)
     payload["username"] = currentUser->getUsername();
 
     sendMessage("join", payload);
-
-    // Simulate document join
-    QTimer::singleShot(500, [this, documentId]() {
-        isDocumentJoined = true;
-        emit documentJoined(documentId);
-
-        // Simulate other users already in the document
-        QStringList userIds = {"user1", "user2", "user3"};
-        QStringList usernames = {"Alice", "Bob", "Charlie"};
-
-        // Remove self
-        for (int i = 0; i < userIds.size(); ++i) {
-            if (currentUser && userIds[i] == currentUser->getUserId()) {
-                userIds.removeAt(i);
-                usernames.removeAt(i);
-                --i;
-            }
-        }
-
-        int numUsers = 1 + QRandomGenerator::global()->bounded(2);
-        for (int i = 0; i < numUsers && i < userIds.size(); ++i) {
-            connectedUsers[userIds[i]] = usernames[i];
-            emit userConnected(userIds[i], usernames[i]);
-
-            int randomPos = QRandomGenerator::global()->bounded(100);
-            emit cursorPositionReceived(userIds[i], usernames[i], randomPos);
-        }
-    }); // ✅ This closes the outer QTimer lambda
+    isDocumentJoined = true;
+    emit documentJoined(documentId);
 }
-
 
 void CollaborationClient::leaveDocument()
 {
@@ -209,15 +192,34 @@ void CollaborationClient::onDisconnected()
 
 void CollaborationClient::onTextMessageReceived(const QString& message)
 {
-    // Parse the message
     QJsonDocument doc = QJsonDocument::fromJson(message.toUtf8());
-    if (doc.isNull() || !doc.isObject()) {
-        emit error("Invalid message format");
-        return;
+    if (!doc.isObject()) return;
+
+    QJsonObject obj = doc.object();
+    QString type = obj["type"].toString();
+    QJsonObject payload = obj["payload"].toObject();
+
+    if (type == "edit") {
+        EditOperation operation = EditOperation::fromJson(payload);
+        emit editReceived(operation);
+    } else if (type == "cursor") {
+        QString userId = payload["userId"].toString();
+        QString username = payload["username"].toString();
+        int position = payload["position"].toInt();
+        emit cursorPositionReceived(userId, username, position);
+    } else if (type == "chat") {
+        QString userId = payload["userId"].toString();
+        QString username = payload["username"].toString();
+        QString chatMessage = payload["message"].toString();
+        emit chatMessageReceived(userId, username, chatMessage);
+    } else if (type == "user_joined") {
+        QString userId = payload["userId"].toString();
+        QString username = payload["username"].toString();
+        emit userConnected(userId, username);
+    } else if (type == "user_left") {
+        QString userId = payload["userId"].toString();
+        emit userDisconnected(userId);
     }
-    
-    QJsonObject jsonMsg = doc.object();
-    handleMessage(jsonMsg);
 }
 
 void CollaborationClient::onError(QAbstractSocket::SocketError error)
@@ -237,69 +239,10 @@ void CollaborationClient::sendMessage(const QString& type, const QJsonObject& pa
     QJsonDocument doc(message);
     QString jsonString = doc.toJson(QJsonDocument::Compact);
     
-    // For the prototype, we'll just log the message
-    qDebug() << "Sending message:" << jsonString;
-    
-    // In a real implementation, we would send the message over WebSocket
-    // if (webSocket.isValid()) {
-    //     webSocket.sendTextMessage(jsonString);
-    // } else {
-    //     emit error("WebSocket not connected");
-    // }
-}
-
-void CollaborationClient::handleMessage(const QJsonObject& message)
-{
-    // Extract message type and payload
-    QString type = message["type"].toString();
-    QJsonObject payload = message["payload"].toObject();
-    
-    if (type == "join_response") {
-        // Handle join response
-        bool success = payload["success"].toBool();
-        if (success) {
-            QString documentId = payload["documentId"].toString();
-            isDocumentJoined = true;
-            emit documentJoined(documentId);
-        } else {
-            QString errorMsg = payload["error"].toString();
-            emit error("Failed to join document: " + errorMsg);
-        }
-    } else if (type == "user_joined") {
-        // Handle user joined notification
-        QString userId = payload["userId"].toString();
-        QString username = payload["username"].toString();
-        
-        connectedUsers[userId] = username;
-        emit userConnected(userId, username);
-    } else if (type == "user_left") {
-        // Handle user left notification
-        QString userId = payload["userId"].toString();
-        
-        if (connectedUsers.contains(userId)) {
-            connectedUsers.remove(userId);
-            emit userDisconnected(userId);
-        }
-    } else if (type == "edit") {
-        // Handle edit operation
-        EditOperation op = EditOperation::fromJson(payload);
-        emit editReceived(op);
-    } else if (type == "cursor") {
-        // Handle cursor position update
-        QString userId = payload["userId"].toString();
-        QString username = payload["username"].toString();
-        int position = payload["position"].toInt();
-        
-        emit cursorPositionReceived(userId, username, position);
-    } else if (type == "chat") {
-        // Handle chat message
-        QString userId = payload["userId"].toString();
-        QString username = payload["username"].toString();
-        QString message = payload["message"].toString();
-        
-        emit chatMessageReceived(userId, username, message);
+    // Send the message over WebSocket
+    if (webSocket.isValid()) {
+        webSocket.sendTextMessage(jsonString);
     } else {
-        // Unknown message type
-        emit error("Unknown message type: " + type);
+        emit error("WebSocket not connected");
     }
 }

@@ -22,7 +22,8 @@ SOURCES += \
     src/User.cpp \
     src/CollaborationClient.cpp \
     src/CollaborationManager.cpp \
-    src/EditOperation.cpp     # Add this line
+    src/CollaborationServer.cpp \
+    src/EditOperation.cpp
 
 HEADERS += \
     include/MainWindow.h \
@@ -33,7 +34,8 @@ HEADERS += \
     include/User.h \
     include/CollaborationClient.h \
     include/CollaborationManager.h \
-    include/EditOperation.h   # Add this line
+    include/CollaborationServer.h \
+    include/EditOperation.h
 
 FORMS += \
     forms/MainWindow.ui \

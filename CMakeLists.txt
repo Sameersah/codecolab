@@ -32,6 +32,7 @@ set(SOURCES
         src/User.cpp
         src/CollaborationClient.cpp
         src/CollaborationManager.cpp
+        src/CollaborationServer.cpp
         src/EditOperation.cpp
 )
 
@@ -45,6 +46,7 @@ set(HEADERS
         include/User.h
         include/CollaborationClient.h
         include/CollaborationManager.h
+        include/CollaborationServer.h
         include/EditOperation.h
 )
 

@@ -292,18 +292,23 @@ void CodeEditorWidget::onTextChanged()
     // Notify about content changes
     emit editorContentChanged(content);
 
-    // In a real implementation, we would calculate delta and send only the changes
+    // Update document content
+    currentDocument->setContent(content);
+
+    // Create an edit operation
     if (collaborationManager) {
-        // Create an edit operation (simplified for the prototype)
         EditOperation op;
         op.userId = "local";
         op.documentId = currentDocument->getId();
         op.position = textCursor().position();
-        op.insertion = ""; // Not used in this simplified version
-        op.deletionLength = 0; // Not used in this simplified version
+        
+        // For the prototype, we'll just send the entire content as an insertion
+        // In a real implementation, we would calculate the actual changes
+        op.insertion = content;
+        op.deletionLength = 0;
 
         // Send the operation to the collaboration manager
-        // collaborationManager->synchronizeChanges(op);
+        collaborationManager->synchronizeChanges(op);
     }
 
     ignoreChanges = false;
@@ -326,4 +331,34 @@ void CodeEditorWidget::mousePressEvent(QMouseEvent *event)
 void CodeEditorWidget::mouseReleaseEvent(QMouseEvent *event)
 {
     QPlainTextEdit::mouseReleaseEvent(event);
+}
+
+void CodeEditorWidget::applyRemoteEdit(const EditOperation& operation)
+{
+    if (!currentDocument || ignoreChanges) return;
+
+    // Set flag to avoid triggering local change events
+    ignoreChanges = true;
+
+    // Get current content
+    QString content = toPlainText();
+
+    // Apply the edit operation
+    if (operation.position >= 0 && operation.position <= content.length()) {
+        // Remove deleted text if any
+        if (operation.deletionLength > 0) {
+            content.remove(operation.position, operation.deletionLength);
+        }
+        
+        // Insert new text
+        if (!operation.insertion.isEmpty()) {
+            content.insert(operation.position, operation.insertion);
+        }
+        
+        // Update the editor
+        setPlainText(content);
+    }
+
+    // Reset flag
+    ignoreChanges = false;
 }

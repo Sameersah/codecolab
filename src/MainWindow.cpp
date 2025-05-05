@@ -25,6 +25,7 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
     , collaborationManager(std::make_shared<CollaborationManager>())
+    , collaborationClient(std::make_unique<CollaborationClient>())
 {
     ui->setupUi(this);
     setupUI();
@@ -46,6 +47,50 @@ void MainWindow::setupConnections()
             this, &MainWindow::onTextChanged);
     connect(codeEditor.get(), &CodeEditorWidget::cursorPositionChanged,
             this, &MainWindow::onCursorPositionChanged);
+
+    // Connect collaboration client signals
+    connect(collaborationClient.get(), &CollaborationClient::connected,
+            this, [this]() {
+                statusLabel->setText("Connected to server");
+                if (currentDocument) {
+                    collaborationClient->joinDocument(currentDocument->getId());
+                }
+            });
+            
+    connect(collaborationClient.get(), &CollaborationClient::disconnected,
+            this, [this]() {
+                statusLabel->setText("Disconnected from server");
+                connectedUsers.clear();
+                updateUserList();
+            });
+            
+    connect(collaborationClient.get(), &CollaborationClient::error,
+            this, [this](const QString& error) {
+                QMessageBox::warning(this, "Collaboration Error", error);
+            });
+            
+    connect(collaborationClient.get(), &CollaborationClient::editReceived,
+            this, [this](const EditOperation& op) {
+                if (currentDocument && codeEditor) {
+                    codeEditor->applyRemoteEdit(op);
+                }
+            });
+            
+    connect(collaborationClient.get(), &CollaborationClient::cursorPositionReceived,
+            this, [this](const QString& userId, const QString& username, int position) {
+                if (codeEditor) {
+                    codeEditor->updateRemoteCursor(userId, username, position);
+                }
+            });
+            
+    connect(collaborationClient.get(), &CollaborationClient::userConnected,
+            this, &MainWindow::onUserConnected);
+            
+    connect(collaborationClient.get(), &CollaborationClient::userDisconnected,
+            this, &MainWindow::onUserDisconnected);
+
+    connect(collaborationClient.get(), &CollaborationClient::chatMessageReceived,
+            this, &MainWindow::onChatMessageReceived);
 
     // Connect chat input
     connect(chatInput.get(), &QTextEdit::textChanged, [this]() {
@@ -202,9 +247,57 @@ void MainWindow::showLoginDialog()
     if (dialog.exec() == QDialog::Accepted) {
         currentUser = dialog.getUser();
         if (currentUser) {
+            // Set the user in the collaboration client
+            collaborationClient->setUser(currentUser);
+            
             updateStatusBar();
             updateTitle();
-            onNewDocument(); // Create a new document by default
+            
+            // Create a default document for the user
+            currentDocument = std::make_shared<Document>(
+                "shared_doc",  // Use a fixed ID for the shared document
+                "Test Document.cpp",
+                currentUser);
+
+            // Set initial content
+            QString initialContent = "// Test Document.cpp\n"
+                                   "// Shared document for collaboration\n\n"
+                                   "#include <iostream>\n\n"
+                                   "int main() {\n"
+                                   "    std::cout << \"Hello, World!\" << std::endl;\n"
+                                   "    return 0;\n"
+                                   "}\n";
+            
+            currentDocument->setContent(initialContent);
+            currentDocument->setLanguage("C++");
+
+            // Set up editor
+            codeEditor->setDocument(currentDocument);
+            codeEditor->setPlainText(initialContent);
+            codeEditor->setLanguage("C++");
+
+            // Update UI
+            updateTitle();
+            updateUserList();
+
+            // Clear chat
+            chatBox->clear();
+            chatInput->clear();
+
+            // Try to connect to the collaboration server
+            if (collaborationClient) {
+                // Show connecting status
+                statusLabel->setText("Connecting to server...");
+                
+                // Try to connect
+                if (!collaborationClient->connect("ws://localhost:8080")) {
+                    QMessageBox::warning(this, "Connection Error",
+                        "Failed to connect to the collaboration server.\n"
+                        "Please make sure the server is running (start with --server flag).\n"
+                        "You can continue working offline.");
+                    statusLabel->setText("Working offline");
+                }
+            }
         } else {
             QMessageBox::critical(this, "Login Failed", "Could not authenticate user.");
         }
@@ -516,24 +609,9 @@ void MainWindow::onCursorPositionChanged()
     int column = codeEditor->textCursor().columnNumber() + 1;
     statusLabel->setText(QString("Line: %1 Column: %2 | %3").arg(line).arg(column).arg(currentUser->getUsername()));
 
-    // In a real implementation, we would send this position to other users
-    // For the prototype, we'll simulate other users' cursors randomly
-    if (isCollaborating) {
-        static QElapsedTimer lastUpdate; // Replace QTime with QElapsedTimer
-
-        // Periodically update simulated cursors for demo purposes
-        if (!lastUpdate.isValid() || lastUpdate.elapsed() > 2000) {
-            lastUpdate.start(); // Restart the timer
-
-            for (const auto& [userId, username] : connectedUsers.toStdMap()) {
-                // Generate random position within the document
-                int maxPos = codeEditor->document()->characterCount();
-                int randomPos = QRandomGenerator::global()->bounded(maxPos); // Replace qrand with QRandomGenerator
-
-                // Update the remote cursor in the editor
-                codeEditor->updateRemoteCursor(userId, username, randomPos);
-            }
-        }
+    // Send cursor position to other users
+    if (collaborationClient && collaborationClient->isConnected()) {
+        collaborationClient->sendCursorPosition(position);
     }
 }
 
@@ -552,20 +630,19 @@ void MainWindow::onTextChanged()
     }
 }
 
-void MainWindow::onChatMessageReceived(const QString& userId, const QString& message)
+void MainWindow::onChatMessageReceived(const QString& userId, const QString& username, const QString& message)
 {
-    if (connectedUsers.contains(userId)) {
-        QString username = connectedUsers[userId];
-        QString formattedMessage = "<b>" + username + ":</b> " + message;
-        chatBox->append(formattedMessage);
-    } else if (currentUser && userId == currentUser->getUserId()) {
-        QString formattedMessage = "<b>You:</b> " + message;
-        chatBox->append(formattedMessage);
+    QString formattedMessage;
+    if (currentUser && userId == currentUser->getUserId()) {
+        formattedMessage = "<span style='color: blue'><b>You:</b> " + message + "</span>";
+    } else {
+        formattedMessage = "<span style='color: green'><b>" + username + ":</b> " + message + "</span>";
     }
+    chatBox->append(formattedMessage);
 }
 
 void MainWindow::onSendChatMessage()
-{{
+{
     if (!currentUser || !currentDocument) return;
 
     QString message = chatInput->toPlainText().trimmed();
@@ -573,30 +650,37 @@ void MainWindow::onSendChatMessage()
         // Clear input
         chatInput->clear();
 
-        // Display message locally
-        onChatMessageReceived(currentUser->getUserId(), message);
-
-        // In a real implementation, we would send this message to other users
-        // For the prototype, we'll simulate a response
-        QTimer::singleShot(1500, [this, message]() {
-            // Get a random user to respond
-            if (!connectedUsers.isEmpty()) {
-                QStringList userIds = connectedUsers.keys();
-                QString randomUserId = userIds[QRandomGenerator::global()->bounded(userIds.size())]; // Replace qrand
-
-                // Generate a simulated response
-                QStringList responses = {
-                    "I see what you mean about " + message,
-                    "That's interesting. Have you tried a different approach?",
-                    "Good point about the code.",
-                    "I think we should refactor that part.",
-                    "Let me check that function you mentioned."
-                };
-
-                QString response = responses[QRandomGenerator::global()->bounded(responses.size())]; // Replace qrand
-                onChatMessageReceived(randomUserId, response);
-            }
-        });
+        // Send message through collaboration client
+        if (collaborationClient && collaborationClient->isConnected()) {
+            collaborationClient->sendChatMessage(message);
+            // Display message locally
+            onChatMessageReceived(currentUser->getUserId(), currentUser->getUsername(), message);
+        }
     }
 }
+
+void MainWindow::addDocument(std::shared_ptr<Document> document)
+{
+    if (!document) return;
+    
+    currentDocument = document;
+    codeEditor->setDocument(document);
+    codeEditor->setPlainText(document->getContent());
+    
+    // Set up collaboration
+    if (collaborationClient) {
+        // Set the document in the collaboration client
+        collaborationClient->setDocument(document);
+        
+        // If connected, join the document
+        if (collaborationClient->isConnected()) {
+            collaborationClient->joinDocument(document->getId());
+        } else {
+            // Try to connect to the collaboration server
+            collaborationClient->connect("ws://localhost:8080");
+        }
+    }
+    
+    updateTitle();
+    updateStatusBar();
 }

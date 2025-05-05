@@ -6,12 +6,14 @@
 #include <QMap>
 #include <QColor>
 #include <memory>
+#include "Document.h"
+#include "CollaborationManager.h"
+#include "EditOperation.h"
 
 class QSyntaxHighlighter;
-class Document;
-class CollaborationManager;
 class QPaintEvent;
 class QResizeEvent;
+class QSize;
 
 struct RemoteCursor {
     QString userId;
@@ -32,8 +34,9 @@ public:
     void setCollaborationManager(std::shared_ptr<CollaborationManager> manager);
     void setLanguage(const QString& language);
     void highlightSyntax();
-
     void updateRemoteCursor(const QString& userId, const QString& username, int position);
+    void applyRemoteEdit(const EditOperation& operation);
+
     void removeRemoteCursor(const QString& userId);
 
 signals:

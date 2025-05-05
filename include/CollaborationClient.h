@@ -14,6 +14,7 @@
 
 class User;
 class Document;
+struct EditOperation;  // Changed from class to struct
 
 class CollaborationClient : public QObject
 {
@@ -23,13 +24,14 @@ public:
     explicit CollaborationClient(QObject *parent = nullptr);
     ~CollaborationClient();
 
-    bool connect(const QString& serverUrl);
+    bool connect(const QString& url);
     void disconnect();
     bool isConnected() const;
     
     void setUser(std::shared_ptr<User> user);
     void setDocument(std::shared_ptr<Document> document);
     
+public slots:
     void joinDocument(const QString& documentId);
     void leaveDocument();
     
@@ -40,7 +42,7 @@ public:
 signals:
     void connected();
     void disconnected();
-    void error(const QString& errorMessage);
+    void error(const QString& message);
     
     void documentJoined(const QString& documentId);
     void documentLeft();
@@ -64,10 +66,10 @@ private:
     
     QWebSocket webSocket;
     QString serverUrl;
+    bool isDocumentJoined;
     std::shared_ptr<User> currentUser;
     std::shared_ptr<Document> currentDocument;
     
-    bool isDocumentJoined;
     QMap<QString, QString> connectedUsers; // userId -> username
 };
 

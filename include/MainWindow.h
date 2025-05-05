@@ -12,6 +12,7 @@
 #include "User.h"
 #include "Document.h"
 #include "CollaborationManager.h"
+#include "CollaborationClient.h"
 
 class CodeEditorWidget;
 class LoginDialog;
@@ -30,19 +31,22 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+    // Add document to the editor
+    void addDocument(std::shared_ptr<Document> document);
+
     private slots:
         void onLogin();
     void onLogout();
     void onNewDocument();
     void onOpenDocument();
-    void onShareDocument();
     void onSaveDocument();
+    void onShareDocument();
+    void onTextChanged();
+    void onCursorPositionChanged();
+    void onSendChatMessage();
     void onUserConnected(const QString& userId, const QString& username);
     void onUserDisconnected(const QString& userId);
-    void onCursorPositionChanged();
-    void onTextChanged();
-    void onChatMessageReceived(const QString& userId, const QString& message);
-    void onSendChatMessage();
+    void onChatMessageReceived(const QString& userId, const QString& username, const QString& message);
 
 private:
     void setupUI();
@@ -65,6 +69,7 @@ private:
     std::shared_ptr<User> currentUser;
     std::shared_ptr<Document> currentDocument;
     std::shared_ptr<CollaborationManager> collaborationManager;
+    std::unique_ptr<CollaborationClient> collaborationClient;
 
     // Track collaboration state
     QMap<QString, QString> connectedUsers; // userId -> username
