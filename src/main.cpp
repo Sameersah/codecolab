@@ -60,6 +60,7 @@ int main(int argc, char *argv[])
     
     // Create a test document and add it to the main window
     auto document = std::make_shared<Document>("test_doc_1", "Test Document", nullptr);
+    document->setLanguage("C++"); // Set the language explicitly
     mainWindow.addDocument(document);
     
     return app.exec();

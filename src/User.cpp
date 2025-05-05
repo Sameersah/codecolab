@@ -13,16 +13,24 @@ User::User(const QString& id, const QString& name, const QString& mail)
     , passwordHash("")
     , sessionToken("")
 {
-    // Generate a random color for this user's cursor
-    // Use the userId to make it deterministic
-    int hash = 0;
-    for (QChar c : userId) {
-        hash = (hash * 31) + c.unicode();
-    }
+    // Use a fixed set of colors for different users
+    static const QColor colors[] = {
+        QColor(0, 128, 255),   // Blue
+        QColor(0, 200, 83),    // Green
+        QColor(255, 128, 0),   // Orange
+        QColor(128, 0, 255),   // Purple
+        QColor(255, 0, 128),   // Pink
+        QColor(0, 200, 200),   // Cyan
+        QColor(200, 0, 200),   // Magenta
+        QColor(200, 200, 0)    // Yellow
+    };
 
-    // Create a hue between 0 and 359 (exclude red which is for errors)
-    int hue = (hash % 300) + 30;
-    cursorColor = QColor::fromHsv(hue, 255, 255);
+    // Use the first character of the user ID to determine the color
+    int colorIndex = 0;
+    if (!id.isEmpty()) {
+        colorIndex = id.at(0).unicode() % 8;
+    }
+    cursorColor = colors[colorIndex];
 }
 
 User::~User() = default;

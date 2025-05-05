@@ -20,6 +20,7 @@
 #include <QFrame>
 #include <QTimer>
 #include <QKeyEvent>
+#include <QColor>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -275,6 +276,7 @@ void MainWindow::showLoginDialog()
             codeEditor->setDocument(currentDocument);
             codeEditor->setPlainText(initialContent);
             codeEditor->setLanguage("C++");
+            codeEditor->highlightSyntax(); // Force syntax highlighting update
 
             // Update UI
             updateTitle();
@@ -285,32 +287,11 @@ void MainWindow::showLoginDialog()
             chatInput->clear();
 
             // Try to connect to the collaboration server
-            if (collaborationClient) {
-                // Show connecting status
-                statusLabel->setText("Connecting to server...");
-                
-                // Try to connect
-                if (collaborationClient->connect("ws://localhost:8080")) {
-                    // Set the document in the collaboration client
-                    collaborationClient->setDocument(currentDocument);
-                    // Join the document
-                    collaborationClient->joinDocument(currentDocument->getId());
-                    statusLabel->setText("Connected to server");
-                } else {
-                    QMessageBox::warning(this, "Connection Error",
-                        "Failed to connect to the collaboration server.\n"
-                        "Please make sure the server is running (start with --server flag).\n"
-                        "You can continue working offline.");
-                    statusLabel->setText("Working offline");
-                }
+            if (collaborationClient->connect("ws://localhost:8080")) {
+                statusLabel->setText("Connected to server");
+            } else {
+                statusLabel->setText("Not connected to server");
             }
-        } else {
-            QMessageBox::critical(this, "Login Failed", "Could not authenticate user.");
-        }
-    } else {
-        // User cancelled login, close application if not already logged in
-        if (!currentUser) {
-            close();
         }
     }
 }
@@ -638,11 +619,40 @@ void MainWindow::onTextChanged()
 
 void MainWindow::onChatMessageReceived(const QString& userId, const QString& username, const QString& message)
 {
+    // Use the same color scheme as the cursors
+    static const QColor colors[] = {
+        QColor(255, 0, 0),     // Red
+        QColor(0, 255, 0),     // Green
+        QColor(0, 0, 255),     // Blue
+        QColor(255, 255, 0),   // Yellow
+        QColor(255, 0, 255),   // Magenta
+        QColor(0, 255, 255),   // Cyan
+        QColor(255, 128, 0),   // Orange
+        QColor(128, 0, 255)    // Purple
+    };
+
+    // Calculate a more deterministic color index based on the entire user ID
+    int colorIndex = 0;
+    if (!userId.isEmpty()) {
+        // Sum up all characters in the user ID
+        int sum = 0;
+        for (const QChar& c : userId) {
+            sum += c.unicode();
+        }
+        colorIndex = sum % 8;
+    }
+    QColor userColor = colors[colorIndex];
+
     QString formattedMessage;
     if (currentUser && userId == currentUser->getUserId()) {
-        formattedMessage = "<span style='color: blue'><b>You:</b> " + message + "</span>";
+        formattedMessage = QString("<span style='color: %1'><b>You:</b> %2</span>")
+            .arg(userColor.name())
+            .arg(message);
     } else {
-        formattedMessage = "<span style='color: green'><b>" + username + ":</b> " + message + "</span>";
+        formattedMessage = QString("<span style='color: %1'><b>%2:</b> %3</span>")
+            .arg(userColor.name())
+            .arg(username)
+            .arg(message);
     }
     chatBox->append(formattedMessage);
 }
@@ -670,6 +680,8 @@ void MainWindow::addDocument(std::shared_ptr<Document> document)
     currentDocument = document;
     codeEditor->setDocument(document);
     codeEditor->setPlainText(document->getContent());
+    codeEditor->setLanguage(document->getLanguage());
+    codeEditor->highlightSyntax(); // Force syntax highlighting update
     
     // Set up collaboration
     if (collaborationClient) {
