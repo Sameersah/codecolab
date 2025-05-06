@@ -25,6 +25,7 @@
 #include <QComboBox>
 #include <QDebug>
 #include <QColor>
+#include <QScrollBar>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -840,17 +841,6 @@ void MainWindow::onTextChanged()
     }
 }
 
-void MainWindow::onChatMessageReceived(const QString& userId, const QString& username, const QString& message)
-{
-    QString formattedMessage;
-    if (currentUser && userId == currentUser->getUserId()) {
-        formattedMessage = "<span style='color: blue'><b>You:</b> " + message + "</span>";
-    } else {
-        formattedMessage = "<span style='color: green'><b>" + username + ":</b> " + message + "</span>";
-    }
-    chatBox->append(formattedMessage);
-}
-
 void MainWindow::onSendChatMessage()
 {
     if (!currentUser || !currentDocument) return;
@@ -863,7 +853,33 @@ void MainWindow::onSendChatMessage()
         // Send message through collaboration client
         if (collaborationClient && collaborationClient->isConnected()) {
             collaborationClient->sendChatMessage(message);
+        } else {
+            // If not connected, just display locally
+            onChatMessageReceived(currentUser->getUserId(), currentUser->getUsername(), message);
         }
+    }
+}
+
+void MainWindow::onChatMessageReceived(const QString& userId, const QString& username, const QString& message)
+{
+    // Skip if this is our own message and we're connected (it will come back through the server)
+    if (currentUser && userId == currentUser->getUserId() && 
+        collaborationClient && collaborationClient->isConnected()) {
+        return;
+    }
+
+    QString formattedMessage;
+    if (currentUser && userId == currentUser->getUserId()) {
+        formattedMessage = "<span style='color: blue'><b>You:</b> " + message + "</span>";
+    } else {
+        formattedMessage = "<span style='color: green'><b>" + username + ":</b> " + message + "</span>";
+    }
+    chatBox->append(formattedMessage);
+    
+    // Scroll to bottom to show new message
+    QScrollBar* scrollBar = chatBox->verticalScrollBar();
+    if (scrollBar) {
+        scrollBar->setValue(scrollBar->maximum());
     }
 }
 

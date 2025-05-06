@@ -35,3 +35,4 @@ Makefile*
 
 # Generated files
 *.autosave 
+users.json
