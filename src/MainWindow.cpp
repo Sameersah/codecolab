@@ -862,12 +862,6 @@ void MainWindow::onSendChatMessage()
 
 void MainWindow::onChatMessageReceived(const QString& userId, const QString& username, const QString& message)
 {
-    // Skip if this is our own message and we're connected (it will come back through the server)
-    if (currentUser && userId == currentUser->getUserId() && 
-        collaborationClient && collaborationClient->isConnected()) {
-        return;
-    }
-
     QString formattedMessage;
     if (currentUser && userId == currentUser->getUserId()) {
         formattedMessage = "<span style='color: blue'><b>You:</b> " + message + "</span>";
