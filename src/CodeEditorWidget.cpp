@@ -1,4 +1,3 @@
-// CodeEditorWidget.cpp
 #include "CodeEditorWidget.h"
 #include "SyntaxHighlighter.h"
 #include "Document.h"
@@ -7,26 +6,24 @@
 #include <QPainter>
 #include <QTextBlock>
 #include <QPaintEvent>
+#include <QSyntaxHighlighter>
 #include <QKeyEvent>
 #include <QScrollBar>
 #include <QDebug>
 #include <QResizeEvent>
 
 CodeEditorWidget::CodeEditorWidget(QWidget *parent)
-    : QPlainTextEdit(parent)
-    , lineNumberArea(new LineNumberArea(this))
-    , syntaxHighlighter(nullptr)
-    , currentLanguage("Plain")
-    , ignoreChanges(false)
-{
-    setLineWrapMode(QPlainTextEdit::NoWrap);
+    : QPlainTextEdit(parent), ignoreChanges(false) , lineNumberArea(new LineNumberArea(this)), syntaxHighlighter(nullptr) {
+        setLineWrapMode(QPlainTextEdit::NoWrap);
 
-    // Enable line numbers
+    
     connect(this, &QPlainTextEdit::blockCountChanged, this, &CodeEditorWidget::updateLineNumberAreaWidth);
     connect(this, &QPlainTextEdit::updateRequest, this, &CodeEditorWidget::updateLineNumberArea);
     connect(this, &QPlainTextEdit::cursorPositionChanged, this, &CodeEditorWidget::highlightCurrentLine);
     connect(this, &QPlainTextEdit::textChanged, this, &CodeEditorWidget::onTextChanged);
     connect(this, &QPlainTextEdit::cursorPositionChanged, this, &CodeEditorWidget::onCursorPositionChanged);
+    connect(this->document(), &QTextDocument::contentsChange,
+            this, &CodeEditorWidget::onDocumentContentsChange);
 
     updateLineNumberAreaWidth(0);
     highlightCurrentLine();
@@ -39,12 +36,13 @@ CodeEditorWidget::CodeEditorWidget(QWidget *parent)
     // Set tab width to 4 spaces (updated for Qt 6)
     QFontMetricsF metrics(font);
     setTabStopDistance(4 * metrics.horizontalAdvance(' '));
+
 }
 
-CodeEditorWidget::~CodeEditorWidget()
-{
+CodeEditorWidget::~CodeEditorWidget(){ 
     delete syntaxHighlighter;
     // lineNumberArea is automatically deleted as a child widget
+
 }
 
 void CodeEditorWidget::setDocument(std::shared_ptr<Document> doc)
@@ -64,8 +62,10 @@ void CodeEditorWidget::setDocument(std::shared_ptr<Document> doc)
     }
 }
 
-void CodeEditorWidget::setCollaborationManager(std::shared_ptr<CollaborationManager> manager)
-{
+
+
+
+void CodeEditorWidget::setCollaborationManager(std::shared_ptr<CollaborationManager> manager) {
     collaborationManager = manager;
 }
 
@@ -127,7 +127,7 @@ void CodeEditorWidget::updateRemoteCursor(const QString& userId, const QString& 
 void CodeEditorWidget::removeRemoteCursor(const QString& userId)
 {
     if (remoteCursors.contains(userId)) {
-        remoteCursors.remove(userId);
+    remoteCursors.remove(userId);
         viewport()->update();
     }
 }
@@ -289,6 +289,7 @@ void CodeEditorWidget::keyPressEvent(QKeyEvent *event)
         // Insert newline with indent
         QPlainTextEdit::keyPressEvent(event);
         textCursor().insertText(indent);
+        event->accept();
     } else {
         QPlainTextEdit::keyPressEvent(event);
     }
@@ -298,33 +299,65 @@ void CodeEditorWidget::onTextChanged()
 {
     if (ignoreChanges || !currentDocument) return;
 
-    // Track local changes
-    ignoreChanges = true;
-    QString content = toPlainText();
-
-    // Notify about content changes
-    emit editorContentChanged(content);
+    // Get the current cursor position and text
+    QTextCursor cursor = textCursor();
+    QString currentText = toPlainText();
+    QString oldText = currentDocument->getContent();
+    
+    // Find the difference between old and new text
+    int pos = 0;
+    while (pos < oldText.length() && pos < currentText.length() && 
+           oldText[pos] == currentText[pos]) {
+        pos++;
+    }
+    
+    // Calculate the actual changes
+    int charsRemoved = 0;
+    int charsAdded = 0;
+    QString insertedText;
+    
+    if (pos < oldText.length() && pos < currentText.length()) {
+        // Find the end of the change
+        int oldEnd = oldText.length() - 1;
+        int newEnd = currentText.length() - 1;
+        
+        while (oldEnd >= pos && newEnd >= pos && 
+               oldText[oldEnd] == currentText[newEnd]) {
+            oldEnd--;
+            newEnd--;
+        }
+        
+        charsRemoved = oldEnd - pos + 1;
+        charsAdded = newEnd - pos + 1;
+        insertedText = currentText.mid(pos, charsAdded);
+    } else if (pos < currentText.length()) {
+        // Only additions
+        charsAdded = currentText.length() - pos;
+        insertedText = currentText.mid(pos, charsAdded);
+    } else if (pos < oldText.length()) {
+        // Only deletions
+        charsRemoved = oldText.length() - pos;
+    }
+    
+    // Create an edit operation
+    EditOperation op;
+    op.userId = "local";
+    op.documentId = currentDocument->getId();
+    op.position = pos;
+    op.deletionLength = charsRemoved;
+    op.insertion = insertedText;
 
     // Update document content
-    currentDocument->setContent(content);
+    currentDocument->setContent(currentText);
 
-    // Create an edit operation
+    // Send the operation to the collaboration manager
     if (collaborationManager) {
-        EditOperation op;
-        op.userId = "local";
-        op.documentId = currentDocument->getId();
-        op.position = textCursor().position();
-        
-        // For the prototype, we'll just send the entire content as an insertion
-        // In a real implementation, we would calculate the actual changes
-        op.insertion = content;
-        op.deletionLength = 0;
-
-        // Send the operation to the collaboration manager
         collaborationManager->synchronizeChanges(op);
     }
 
-    ignoreChanges = false;
+    // Notify about content changes
+    emit editorContentChanged(currentText);
+    emit textChangedAt(pos, charsRemoved, insertedText);
 }
 
 void CodeEditorWidget::onCursorPositionChanged()
@@ -370,8 +403,42 @@ void CodeEditorWidget::applyRemoteEdit(const EditOperation& operation)
         
         // Update the editor
         setPlainText(content);
+
+        // Update document content
+        currentDocument->setContent(content);
+
+        // Preserve the local cursor position if it's not affected by the change
+        QTextCursor cursor = textCursor();
+        int localPos = cursor.position();
+        
+        if (localPos <= operation.position) {
+            // Cursor is before the change, keep it where it is
+            cursor.setPosition(localPos);
+        } else if (localPos <= operation.position + operation.deletionLength) {
+            // Cursor is in the deleted region, move it to the start of the deletion
+            cursor.setPosition(operation.position);
+        } else {
+            // Cursor is after the change, adjust its position
+            cursor.setPosition(localPos - operation.deletionLength + operation.insertion.length());
+        }
+        
+        setTextCursor(cursor);
     }
 
     // Reset flag
     ignoreChanges = false;
 }
+
+void CodeEditorWidget::onDocumentContentsChange(int position, int charsRemoved, int charsAdded) {
+    if (ignoreChanges) return;
+
+    QString insertedText;
+    if (charsAdded > 0) {
+        insertedText = this->toPlainText().mid(position, charsAdded);
+    }
+
+    emit textChangedAt(position, charsRemoved, insertedText);
+}
+
+
+

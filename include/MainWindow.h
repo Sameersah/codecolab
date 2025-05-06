@@ -1,4 +1,3 @@
-// MainWindow.h
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
@@ -6,22 +5,24 @@
 #include <QLabel>
 #include <QString>
 #include <memory>
-#include <QElapsedTimer>    // Add for Qt 6
-#include <QRandomGenerator> // Add for Qt 6
-
-#include "User.h"
+#include <QElapsedTimer>    // Qt 6
+#include <QRandomGenerator> // Qt 6
+#include <QMap>
+#include <QJsonDocument>
+#include <QTimer>
+#include "ui_MainWindow.h"
+#include "CodeEditorWidget.h"
 #include "Document.h"
-#include "CollaborationManager.h"
+#include "User.h"
 #include "CollaborationClient.h"
+#include "CollaborationManager.h"
+#include "NetworkServer.h"
+#include "NetworkClient.h"
 
-class CodeEditorWidget;
+// Forward declarations
 class LoginDialog;
 class QTextEdit;
 class QSplitter;
-
-namespace Ui {
-    class MainWindow;
-}
 
 class MainWindow : public QMainWindow
 {
@@ -34,19 +35,20 @@ public:
     // Add document to the editor
     void addDocument(std::shared_ptr<Document> document);
 
-    private slots:
-        void onLogin();
+private slots:
+    void showLoginDialog();
+    void onLogin();
     void onLogout();
     void onNewDocument();
     void onOpenDocument();
     void onSaveDocument();
     void onShareDocument();
+    void onUserConnected(const QString &userId, const QString &username);
+    void onUserDisconnected(const QString &userId);
     void onTextChanged();
-    void onCursorPositionChanged();
+    void onChatMessageReceived(const QString &userId, const QString &username, const QString &message);
     void onSendChatMessage();
-    void onUserConnected(const QString& userId, const QString& username);
-    void onUserDisconnected(const QString& userId);
-    void onChatMessageReceived(const QString& userId, const QString& username, const QString& message);
+    void onRemoteTextChanged(const QString &message);
 
 private:
     void setupUI();
@@ -54,26 +56,25 @@ private:
     void updateTitle();
     void updateStatusBar();
     void updateUserList();
-    void showLoginDialog();
     bool eventFilter(QObject *obj, QEvent *event) override;
 
-    Ui::MainWindow *ui;
+    std::unique_ptr<Ui::MainWindow> ui;
+    std::shared_ptr<CollaborationManager> collaborationManager;
+    std::unique_ptr<CollaborationClient> collaborationClient;
+    std::shared_ptr<Document> currentDocument;
+    std::shared_ptr<User> currentUser;
     std::unique_ptr<CodeEditorWidget> codeEditor;
+    std::unique_ptr<QSplitter> mainSplitter;
+    std::unique_ptr<QSplitter> rightSplitter;
     std::unique_ptr<QTextEdit> chatBox;
     std::unique_ptr<QTextEdit> chatInput;
     std::unique_ptr<QLabel> statusLabel;
-    std::unique_ptr<QSplitter> mainSplitter;
-    std::unique_ptr<QSplitter> rightSplitter;
-
-    // Core objects
-    std::shared_ptr<User> currentUser;
-    std::shared_ptr<Document> currentDocument;
-    std::shared_ptr<CollaborationManager> collaborationManager;
-    std::unique_ptr<CollaborationClient> collaborationClient;
-
-    // Track collaboration state
-    QMap<QString, QString> connectedUsers; // userId -> username
-    bool isCollaborating = false;
+    QMap<QString, QString> connectedUsers;
+    bool isCollaborating;
+    NetworkServer *server;
+    NetworkClient *client;
+    QString lastSentText;
+    QTimer *typingTimer;
 };
 
 #endif // MAINWINDOW_H

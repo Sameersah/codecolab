@@ -24,7 +24,9 @@ SOURCES += \
     src/CollaborationManager.cpp \
     src/CollaborationServer.cpp \
     src/EditOperation.cpp \
-    src/UserStorage.cpp
+    src/UserStorage.cpp \
+    src/NetworkClient.cpp \
+    src/NetworkServer.cpp
 
 HEADERS += \
     include/MainWindow.h \
@@ -37,7 +39,9 @@ HEADERS += \
     include/CollaborationManager.h \
     include/CollaborationServer.h \
     include/EditOperation.h \
-    include/UserStorage.h
+    include/UserStorage.h \
+    include/NetworkClient.h \
+    include/NetworkServer.h
 
 FORMS += \
     forms/MainWindow.ui \

@@ -38,10 +38,12 @@ public:
     void applyRemoteEdit(const EditOperation& operation);
 
     void removeRemoteCursor(const QString& userId);
+    bool ignoreChanges;
 
 signals:
     void editorContentChanged(const QString& content);
     void cursorPositionChanged(int position);
+    void textChangedAt(int pos, int charsRemoved, const QString& insertedText);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -51,6 +53,7 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
 
 private slots:
+void onDocumentContentsChange(int position, int charsRemoved, int charsAdded);
     void onTextChanged();
     void onCursorPositionChanged();
     void updateLineNumberAreaWidth(int newBlockCount);
@@ -89,7 +92,7 @@ private:
     QMap<QString, RemoteCursor> remoteCursors;
 
     // Track local changes to avoid loops
-    bool ignoreChanges;
+    
 };
 
 #endif // CODEEDITORWIDGET_H

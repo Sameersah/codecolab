@@ -3,6 +3,8 @@
 #include "CodeEditorWidget.h"
 #include "LoginDialog.h"
 #include "CollaborationClient.h"
+#include "NetworkServer.h"
+#include "NetworkClient.h"
 
 #include <QSplitter>
 #include <QTextEdit>
@@ -21,225 +23,56 @@
 #include <QTimer>
 #include <QKeyEvent>
 #include <QColor>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
     , collaborationManager(std::make_shared<CollaborationManager>())
     , collaborationClient(std::make_unique<CollaborationClient>())
+    , isCollaborating(false)
 {
     ui->setupUi(this);
     setupUI();
     setupConnections();
 
-    // Show login dialog on startup
-    QTimer::singleShot(500, this, &MainWindow::showLoginDialog);
-}
+    server = new NetworkServer(this);
+    client = new NetworkClient(this);
 
-MainWindow::~MainWindow()
-{
-    delete ui;
-}
+    // Connect server signals
+    connect(server, &NetworkServer::dataReceived, this, &MainWindow::onRemoteTextChanged);
+    connect(client, &NetworkClient::messageReceived, this, &MainWindow::onRemoteTextChanged);
 
-void MainWindow::setupConnections()
-{
-    // Connect code editor signals
-    connect(codeEditor.get(), &CodeEditorWidget::editorContentChanged,
-            this, &MainWindow::onTextChanged);
-    connect(codeEditor.get(), &CodeEditorWidget::cursorPositionChanged,
-            this, &MainWindow::onCursorPositionChanged);
+    // Create typing timer for receiving updates
+    typingTimer = new QTimer(this);
+    typingTimer->setSingleShot(true);
+    typingTimer->setInterval(500); // 500ms delay before receiving updates
 
-    // Connect collaboration client signals
-    connect(collaborationClient.get(), &CollaborationClient::connected,
-            this, [this]() {
-                statusLabel->setText("Connected to server");
-                if (currentDocument) {
-                    collaborationClient->joinDocument(currentDocument->getId());
+    // Connect editor signals
+    connect(codeEditor.get(), &CodeEditorWidget::editorContentChanged, this, [this](const QString &) {
+        if (isCollaborating) {
+            // Send updates immediately
+            QString currentText = codeEditor->toPlainText();
+            if (currentText != lastSentText) {
+                if (server->isListening()) {
+                    server->sendToClients(currentText);
+                } else {
+                    client->sendMessage(currentText);
                 }
-            });
-            
-    connect(collaborationClient.get(), &CollaborationClient::disconnected,
-            this, [this]() {
-                statusLabel->setText("Disconnected from server");
-                connectedUsers.clear();
-                updateUserList();
-            });
-            
-    connect(collaborationClient.get(), &CollaborationClient::error,
-            this, [this](const QString& error) {
-                QMessageBox::warning(this, "Collaboration Error", error);
-            });
-            
-    connect(collaborationClient.get(), &CollaborationClient::editReceived,
-            this, [this](const EditOperation& op) {
-                if (currentDocument && codeEditor) {
-                    codeEditor->applyRemoteEdit(op);
-                }
-            });
-            
-    connect(collaborationClient.get(), &CollaborationClient::cursorPositionReceived,
-            this, [this](const QString& userId, const QString& username, int position) {
-                if (codeEditor) {
-                    codeEditor->updateRemoteCursor(userId, username, position);
-                }
-            });
-            
-    connect(collaborationClient.get(), &CollaborationClient::userConnected,
-            this, &MainWindow::onUserConnected);
-            
-    connect(collaborationClient.get(), &CollaborationClient::userDisconnected,
-            this, &MainWindow::onUserDisconnected);
-
-    connect(collaborationClient.get(), &CollaborationClient::chatMessageReceived,
-            this, &MainWindow::onChatMessageReceived);
-
-    // Connect chat input
-    connect(chatInput.get(), &QTextEdit::textChanged, [this]() {
-        // Enable/disable send button based on whether there's text
-        QPushButton* sendButton = qobject_cast<QPushButton*>(
-            chatInput->parentWidget()->layout()->itemAt(
-                chatInput->parentWidget()->layout()->count() - 1)->widget());
-        if (sendButton) {
-            sendButton->setEnabled(!chatInput->toPlainText().trimmed().isEmpty());
+                lastSentText = currentText;
+            }
+            // Start the timer to delay receiving updates
+            typingTimer->start();
         }
     });
 
-    // Install event filter for chat input to handle Enter key
-    chatInput->installEventFilter(this);
+    QTimer::singleShot(500, this, &MainWindow::showLoginDialog);
 }
 
-void MainWindow::setupUI()
-{
-    // Create central widget and layout
-    QWidget* centralWidget = new QWidget(this);
-    QVBoxLayout* mainLayout = new QVBoxLayout(centralWidget);
-    mainLayout->setContentsMargins(5, 5, 5, 5);
-    setCentralWidget(centralWidget);
-
-    // Create main splitter (editor | right panel)
-    mainSplitter = std::make_unique<QSplitter>(Qt::Horizontal);
-    mainLayout->addWidget(mainSplitter.get());
-
-    // Create code editor
-    codeEditor = std::make_unique<CodeEditorWidget>();
-    codeEditor->setCollaborationManager(collaborationManager);
-    mainSplitter->addWidget(codeEditor.get());
-
-    // Create right panel splitter (user list | chat)
-    rightSplitter = std::make_unique<QSplitter>(Qt::Vertical);
-    mainSplitter->addWidget(rightSplitter.get());
-
-    // Create user list panel
-    QWidget* userListPanel = new QWidget(rightSplitter.get());
-    QVBoxLayout* userListLayout = new QVBoxLayout(userListPanel);
-    userListLayout->setContentsMargins(0, 0, 0, 0);
-
-    QLabel* collaboratorsLabel = new QLabel("Collaborators:");
-    userListLayout->addWidget(collaboratorsLabel);
-
-    QListWidget* userList = new QListWidget();
-    userListLayout->addWidget(userList);
-
-    rightSplitter->addWidget(userListPanel);
-
-    // Create chat panel
-    QWidget* chatPanel = new QWidget(rightSplitter.get());
-    QVBoxLayout* chatLayout = new QVBoxLayout(chatPanel);
-    chatLayout->setContentsMargins(0, 0, 0, 0);
-
-    QLabel* chatLabel = new QLabel("Chat:");
-    chatLayout->addWidget(chatLabel);
-
-    chatBox = std::make_unique<QTextEdit>();
-    chatBox->setReadOnly(true);
-    chatLayout->addWidget(chatBox.get());
-
-    chatInput = std::make_unique<QTextEdit>();
-    chatInput->setMaximumHeight(60);
-    chatLayout->addWidget(chatInput.get());
-
-    QPushButton* sendButton = new QPushButton("Send");
-    connect(sendButton, &QPushButton::clicked, this, &MainWindow::onSendChatMessage);
-    chatLayout->addWidget(sendButton);
-
-    rightSplitter->addWidget(chatPanel);
-
-    // Set up splitter proportions
-    mainSplitter->setSizes({600, 200});
-    rightSplitter->setSizes({200, 400});
-
-    // Set up status bar
-    statusLabel = std::make_unique<QLabel>("Not logged in");
-    statusBar()->addWidget(statusLabel.get());
-
-    // Setup menus with newer Qt 6 syntax
-    QMenu* fileMenu = menuBar()->addMenu("&File");
-    QAction* newAction = new QAction("New", this);
-    newAction->setShortcut(QKeySequence::New);
-    connect(newAction, &QAction::triggered, this, &MainWindow::onNewDocument);
-    fileMenu->addAction(newAction);
-
-    QAction* openAction = new QAction("Open", this);
-    openAction->setShortcut(QKeySequence::Open);
-    connect(openAction, &QAction::triggered, this, &MainWindow::onOpenDocument);
-    fileMenu->addAction(openAction);
-
-    QAction* saveAction = new QAction("Save", this);
-    saveAction->setShortcut(QKeySequence::Save);
-    connect(saveAction, &QAction::triggered, this, &MainWindow::onSaveDocument);
-    fileMenu->addAction(saveAction);
-
-    fileMenu->addSeparator();
-
-    QAction* exitAction = new QAction("Exit", this);
-    exitAction->setShortcut(QKeySequence::Quit);
-    connect(exitAction, &QAction::triggered, this, &QWidget::close);
-    fileMenu->addAction(exitAction);
-
-    QMenu* editMenu = menuBar()->addMenu("&Edit");
-    QAction* cutAction = new QAction("Cut", this);
-    cutAction->setShortcut(QKeySequence::Cut);
-    connect(cutAction, &QAction::triggered, codeEditor.get(), &QPlainTextEdit::cut);
-    editMenu->addAction(cutAction);
-
-    QAction* copyAction = new QAction("Copy", this);
-    copyAction->setShortcut(QKeySequence::Copy);
-    connect(copyAction, &QAction::triggered, codeEditor.get(), &QPlainTextEdit::copy);
-    editMenu->addAction(copyAction);
-
-    QAction* pasteAction = new QAction("Paste", this);
-    pasteAction->setShortcut(QKeySequence::Paste);
-    connect(pasteAction, &QAction::triggered, codeEditor.get(), &QPlainTextEdit::paste);
-    editMenu->addAction(pasteAction);
-
-    QMenu* viewMenu = menuBar()->addMenu("&View");
-    QAction* zoomInAction = new QAction("Zoom In", this);
-    zoomInAction->setShortcut(QKeySequence::ZoomIn);
-    connect(zoomInAction, &QAction::triggered, codeEditor.get(), &QPlainTextEdit::zoomIn);
-    viewMenu->addAction(zoomInAction);
-
-    QAction* zoomOutAction = new QAction("Zoom Out", this);
-    zoomOutAction->setShortcut(QKeySequence::ZoomOut);
-    connect(zoomOutAction, &QAction::triggered, codeEditor.get(), &QPlainTextEdit::zoomOut);
-    viewMenu->addAction(zoomOutAction);
-
-    QMenu* collaborationMenu = menuBar()->addMenu("&Collaboration");
-    QAction* shareAction = new QAction("Share Document", this);
-    connect(shareAction, &QAction::triggered, this, &MainWindow::onShareDocument);
-    collaborationMenu->addAction(shareAction);
-
-    QMenu* userMenu = menuBar()->addMenu("&User");
-    QAction* loginAction = new QAction("Login", this);
-    connect(loginAction, &QAction::triggered, this, &MainWindow::onLogin);
-    userMenu->addAction(loginAction);
-
-    QAction* logoutAction = new QAction("Logout", this);
-    connect(logoutAction, &QAction::triggered, this, &MainWindow::onLogout);
-    userMenu->addAction(logoutAction);
-
-    // Set window properties
-    resize(1024, 768);
-    setWindowTitle("CodeColab - Collaborative Code Editor");
+MainWindow::~MainWindow() {
+    // No need to delete ui as it's a unique_ptr
+    // The unique_ptr will automatically delete the object when it goes out of scope
 }
 
 void MainWindow::showLoginDialog()
@@ -276,7 +109,7 @@ void MainWindow::showLoginDialog()
             codeEditor->setDocument(currentDocument);
             codeEditor->setPlainText(initialContent);
             codeEditor->setLanguage("C++");
-            codeEditor->highlightSyntax(); // Force syntax highlighting update
+            codeEditor->highlightSyntax();
 
             // Update UI
             updateTitle();
@@ -286,11 +119,18 @@ void MainWindow::showLoginDialog()
             chatBox->clear();
             chatInput->clear();
 
-            // Try to connect to the collaboration server
-            if (collaborationClient->connect("ws://localhost:8080")) {
-                statusLabel->setText("Connected to server");
+            // Try to start or join session
+            if (server->startServer(1234)) {
+                // First user - started server
+                statusLabel->setText("Started collaboration session");
+                isCollaborating = true;
+                lastSentText = initialContent;
+                server->sendToClients(initialContent);
             } else {
-                statusLabel->setText("Not connected to server");
+                // Subsequent user - try to join
+                client->connectToHost("127.0.0.1", 1234);
+                isCollaborating = true;
+                statusLabel->setText("Joined collaboration session");
             }
         }
     }
@@ -348,9 +188,7 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
     return QMainWindow::eventFilter(obj, event);
 }
 
-// Slot implementations
-void MainWindow::onLogin()
-{
+void MainWindow::onLogin() {
     // If already logged in, ask if user wants to logout first
     if (currentUser) {
         QMessageBox::StandardButton reply;
@@ -457,12 +295,14 @@ void MainWindow::onNewDocument()
     }
 }
 
-void MainWindow::onOpenDocument()
-{
-    if (!currentUser) {
-        QMessageBox::warning(this, "Not Logged In", "You must be logged in to open a document.");
-        return;
-    }
+void MainWindow::onOpenDocument() {
+    QString file = QFileDialog::getOpenFileName(this, "Open File");
+    if (!file.isEmpty()) {
+        QFile f(file);
+        if (f.open(QIODevice::ReadOnly)) {
+            codeEditor->setPlainText(f.readAll());
+            f.close();
+        }
 
     QString fileName = QFileDialog::getOpenFileName(this, "Open Document", "",
                                                   "C++ Files (*.cpp *.h);;Python Files (*.py);;JavaScript Files (*.js);;Java Files (*.java);;All Files (*)");
@@ -493,9 +333,9 @@ void MainWindow::onOpenDocument()
                 currentDocument->setLanguage("JavaScript");
             } else if (extension == "java") {
                 currentDocument->setLanguage("Java");
-            } else {
+    } else {
                 currentDocument->setLanguage("Plain");
-            }
+    }
 
             // Set up editor
             codeEditor->setDocument(currentDocument);
@@ -508,11 +348,12 @@ void MainWindow::onOpenDocument()
 
             // Clear chat
             chatBox->clear();
-            chatInput->clear();
+        chatInput->clear();
         } else {
             QMessageBox::critical(this, "Error", "Could not open file: " + fileName);
         }
     }
+}
 }
 
 void MainWindow::onSaveDocument()
@@ -584,24 +425,6 @@ void MainWindow::onUserDisconnected(const QString& userId)
     }
 }
 
-void MainWindow::onCursorPositionChanged()
-{
-    if (!currentUser || !currentDocument) return;
-
-    // Get current position
-    int position = codeEditor->textCursor().position();
-
-    // Update status bar with position information
-    int line = codeEditor->textCursor().blockNumber() + 1;
-    int column = codeEditor->textCursor().columnNumber() + 1;
-    statusLabel->setText(QString("Line: %1 Column: %2 | %3").arg(line).arg(column).arg(currentUser->getUsername()));
-
-    // Send cursor position to other users
-    if (collaborationClient && collaborationClient->isConnected()) {
-        collaborationClient->sendCursorPosition(position);
-    }
-}
-
 void MainWindow::onTextChanged()
 {
     if (!currentUser || !currentDocument) return;
@@ -669,6 +492,8 @@ void MainWindow::onSendChatMessage()
         // Send message through collaboration client
         if (collaborationClient && collaborationClient->isConnected()) {
             collaborationClient->sendChatMessage(message);
+            // Display message locally
+            onChatMessageReceived(currentUser->getUserId(), currentUser->getUsername(), message);
         }
     }
 }
@@ -700,3 +525,211 @@ void MainWindow::addDocument(std::shared_ptr<Document> document)
     updateTitle();
     updateStatusBar();
 }
+
+void MainWindow::onRemoteTextChanged(const QString &message) {
+    if (!codeEditor || typingTimer->isActive()) return;  // Don't process updates while typing
+
+    // Store current cursor position
+    QTextCursor cursor = codeEditor->textCursor();
+    int cursorPosition = cursor.position();
+
+    // Block signals to prevent feedback loop
+    codeEditor->blockSignals(true);
+    codeEditor->ignoreChanges = true;
+
+    // Apply the remote changes
+    codeEditor->setPlainText(message);
+
+    // Update document content
+    if (currentDocument) {
+        currentDocument->setContent(message);
+    }
+
+    // Restore cursor position if it's still valid
+    if (cursorPosition <= message.length()) {
+        cursor.setPosition(cursorPosition);
+        codeEditor->setTextCursor(cursor);
+    }
+
+    // Restore signal handling
+    codeEditor->ignoreChanges = false;
+    codeEditor->blockSignals(false);
+}
+
+void MainWindow::setupUI() {
+    QWidget* centralWidget = new QWidget(this);
+    QVBoxLayout* mainLayout = new QVBoxLayout(centralWidget);
+    mainLayout->setContentsMargins(5, 5, 5, 5);
+    setCentralWidget(centralWidget);
+
+    // Create main splitter (editor | right panel)
+    mainSplitter = std::make_unique<QSplitter>(Qt::Horizontal);
+    mainLayout->addWidget(mainSplitter.get());
+
+    // Create code editor
+    codeEditor = std::make_unique<CodeEditorWidget>();
+    codeEditor->setCollaborationManager(collaborationManager);
+    mainSplitter->addWidget(codeEditor.get());
+
+    // Create right panel splitter (user list | chat)
+    rightSplitter = std::make_unique<QSplitter>(Qt::Vertical);
+    mainSplitter->addWidget(rightSplitter.get());
+
+    // Create user list panel
+    QWidget* userListPanel = new QWidget(rightSplitter.get());
+    QVBoxLayout* userListLayout = new QVBoxLayout(userListPanel);
+    userListLayout->setContentsMargins(0, 0, 0, 0);
+
+    QLabel* collaboratorsLabel = new QLabel("Collaborators:");
+    userListLayout->addWidget(collaboratorsLabel);
+
+    QListWidget* userList = new QListWidget();
+    userListLayout->addWidget(userList);
+
+    rightSplitter->addWidget(userListPanel);
+
+    // Create chat panel
+    QWidget* chatPanel = new QWidget(rightSplitter.get());
+    QVBoxLayout* chatLayout = new QVBoxLayout(chatPanel);
+    chatLayout->setContentsMargins(0, 0, 0, 0);
+
+    QLabel* chatLabel = new QLabel("Chat:");
+    chatLayout->addWidget(chatLabel);
+
+    chatBox = std::make_unique<QTextEdit>();
+    chatBox->setReadOnly(true);
+    chatLayout->addWidget(chatBox.get());
+
+    chatInput = std::make_unique<QTextEdit>();
+    chatInput->setMaximumHeight(60);
+    chatLayout->addWidget(chatInput.get());
+
+    QPushButton* sendButton = new QPushButton("Send");
+    connect(sendButton, &QPushButton::clicked, this, &MainWindow::onSendChatMessage);
+    chatLayout->addWidget(sendButton);
+
+    rightSplitter->addWidget(chatPanel);
+    mainSplitter->setSizes({600, 200});
+    rightSplitter->setSizes({200, 400});
+
+    statusLabel = std::make_unique<QLabel>("Not logged in");
+    statusBar()->addWidget(statusLabel.get());
+
+    QMenu* fileMenu = menuBar()->addMenu("&File");
+    QAction* newAction = new QAction("New", this);
+    newAction->setShortcut(QKeySequence::New);
+    connect(newAction, &QAction::triggered, this, &MainWindow::onNewDocument);
+    fileMenu->addAction(newAction);
+
+    QAction* openAction = new QAction("Open", this);
+    openAction->setShortcut(QKeySequence::Open);
+    connect(openAction, &QAction::triggered, this, &MainWindow::onOpenDocument);
+    fileMenu->addAction(openAction);
+
+    QAction* saveAction = new QAction("Save", this);
+    saveAction->setShortcut(QKeySequence::Save);
+    connect(saveAction, &QAction::triggered, this, &MainWindow::onSaveDocument);
+    fileMenu->addAction(saveAction);
+
+    fileMenu->addSeparator();
+
+    QAction* exitAction = new QAction("Exit", this);
+    exitAction->setShortcut(QKeySequence::Quit);
+    connect(exitAction, &QAction::triggered, this, &QWidget::close);
+    fileMenu->addAction(exitAction);
+
+    QMenu* editMenu = menuBar()->addMenu("&Edit");
+    QAction* cutAction = new QAction("Cut", this);
+    cutAction->setShortcut(QKeySequence::Cut);
+    connect(cutAction, &QAction::triggered, codeEditor.get(), &QPlainTextEdit::cut);
+    editMenu->addAction(cutAction);
+
+    QAction* copyAction = new QAction("Copy", this);
+    copyAction->setShortcut(QKeySequence::Copy);
+    connect(copyAction, &QAction::triggered, codeEditor.get(), &QPlainTextEdit::copy);
+    editMenu->addAction(copyAction);
+
+    QAction* pasteAction = new QAction("Paste", this);
+    pasteAction->setShortcut(QKeySequence::Paste);
+    connect(pasteAction, &QAction::triggered, codeEditor.get(), &QPlainTextEdit::paste);
+    editMenu->addAction(pasteAction);
+
+    QMenu* viewMenu = menuBar()->addMenu("&View");
+    QAction* zoomInAction = new QAction("Zoom In", this);
+    zoomInAction->setShortcut(QKeySequence::ZoomIn);
+    connect(zoomInAction, &QAction::triggered, codeEditor.get(), &QPlainTextEdit::zoomIn);
+    viewMenu->addAction(zoomInAction);
+
+    QAction* zoomOutAction = new QAction("Zoom Out", this);
+    zoomOutAction->setShortcut(QKeySequence::ZoomOut);
+    connect(zoomOutAction, &QAction::triggered, codeEditor.get(), &QPlainTextEdit::zoomOut);
+    viewMenu->addAction(zoomOutAction);
+
+    QMenu* userMenu = menuBar()->addMenu("&User");
+    QAction* loginAction = new QAction("Login", this);
+    connect(loginAction, &QAction::triggered, this, &MainWindow::onLogin);
+    userMenu->addAction(loginAction);
+
+    QAction* logoutAction = new QAction("Logout", this);
+    connect(logoutAction, &QAction::triggered, this, &MainWindow::onLogout);
+    userMenu->addAction(logoutAction);
+
+    // Set window properties
+    resize(1024, 768);
+    setWindowTitle("CodeColab - Collaborative Code Editor");
+}
+
+void MainWindow::setupConnections() {
+    connect(codeEditor.get(), &CodeEditorWidget::editorContentChanged, this, &MainWindow::onTextChanged);
+
+    // Connect collaboration client signals
+    connect(collaborationClient.get(), &CollaborationClient::connected,
+            this, [this]() {
+                statusLabel->setText("Connected to server");
+                if (currentDocument) {
+                    collaborationClient->joinDocument(currentDocument->getId());
+                }
+            });
+            
+    connect(collaborationClient.get(), &CollaborationClient::disconnected,
+            this, [this]() {
+                statusLabel->setText("Disconnected from server");
+                connectedUsers.clear();
+                updateUserList();
+            });
+            
+    connect(collaborationClient.get(), &CollaborationClient::error,
+            this, [this](const QString& error) {
+                QMessageBox::warning(this, "Collaboration Error", error);
+            });
+            
+    connect(collaborationClient.get(), &CollaborationClient::editReceived,
+            this, [this](const EditOperation& op) {
+                if (currentDocument && codeEditor) {
+                    codeEditor->applyRemoteEdit(op);
+                }
+            });
+            
+    connect(collaborationClient.get(), &CollaborationClient::userConnected,
+            this, &MainWindow::onUserConnected);
+            
+    connect(collaborationClient.get(), &CollaborationClient::userDisconnected,
+            this, &MainWindow::onUserDisconnected);
+
+    connect(collaborationClient.get(), &CollaborationClient::chatMessageReceived,
+            this, &MainWindow::onChatMessageReceived);
+
+    // Connect chat input
+    connect(chatInput.get(), &QTextEdit::textChanged, [this]() {
+        QPushButton* sendButton = qobject_cast<QPushButton*>(
+            chatInput->parentWidget()->layout()->itemAt(
+                chatInput->parentWidget()->layout()->count() - 1)->widget());
+        if (sendButton) {
+            sendButton->setEnabled(!chatInput->toPlainText().trimmed().isEmpty());
+        }
+    });
+
+    chatInput->installEventFilter(this);
+}
+
+
