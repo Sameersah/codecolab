@@ -811,11 +811,14 @@ void MainWindow::onTextChanged()
 
     // Update document content
     QString newContent = codeEditor->toPlainText();
-    if (newContent != currentDocument->getContent()) {
+    QString oldContent = currentDocument->getContent();
+    
+    if (newContent != oldContent) {
         qDebug() << "Document content changed:"
                  << "\n  Document ID:" << currentDocument->getId()
                  << "\n  User:" << currentUser->getUsername()
-                 << "\n  Content length:" << newContent.length();
+                 << "\n  Old content length:" << oldContent.length()
+                 << "\n  New content length:" << newContent.length();
         
         currentDocument->setContent(newContent);
 
@@ -830,9 +833,20 @@ void MainWindow::onTextChanged()
             EditOperation op;
             op.userId = currentUser->getUserId();
             op.documentId = currentDocument->getId();
-            op.position = 0;
-            op.insertion = newContent;
-            op.deletionLength = currentDocument->getContent().length();
+            
+            // Calculate the difference between old and new content
+            if (newContent.length() < oldContent.length()) {
+                // This is a deletion
+                op.position = 0;
+                op.deletionLength = oldContent.length();
+                op.insertion = newContent;
+            } else {
+                // This is an insertion or replacement
+                op.position = 0;
+                op.deletionLength = oldContent.length();
+                op.insertion = newContent;
+            }
+            
             collaborationClient->sendEdit(op);
         }
 

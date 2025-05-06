@@ -373,18 +373,37 @@ void CodeEditorWidget::applyRemoteEdit(const EditOperation& operation)
 
     // Apply the edit operation
     if (operation.position >= 0 && operation.position <= content.length()) {
-        // Remove deleted text if any
+        // Create a new text cursor
+        QTextCursor cursor = textCursor();
+        
+        // Store current cursor position and selection
+        int oldPosition = cursor.position();
+        int oldAnchor = cursor.anchor();
+        
+        // Move cursor to the operation position
+        cursor.setPosition(operation.position);
+        
+        // If there's a deletion, select the text to be deleted
         if (operation.deletionLength > 0) {
-            content.remove(operation.position, operation.deletionLength);
+            cursor.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, operation.deletionLength);
         }
         
-        // Insert new text
-        if (!operation.insertion.isEmpty()) {
-            content.insert(operation.position, operation.insertion);
-        }
+        // Insert the new text (this will replace the selected text if any)
+        cursor.insertText(operation.insertion);
         
-        // Update the editor
-        setPlainText(content);
+        // Restore cursor position if it was within the edited region
+        if (oldPosition > operation.position) {
+            int newPosition = oldPosition;
+            if (oldPosition > operation.position + operation.deletionLength) {
+                // Cursor was after the deleted text
+                newPosition = oldPosition - operation.deletionLength + operation.insertion.length();
+            } else if (oldPosition > operation.position) {
+                // Cursor was within the deleted text
+                newPosition = operation.position + operation.insertion.length();
+            }
+            cursor.setPosition(newPosition);
+            setTextCursor(cursor);
+        }
     }
 
     // Reset flag
