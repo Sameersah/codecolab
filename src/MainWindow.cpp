@@ -24,6 +24,7 @@
 #include <QDialogButtonBox>
 #include <QComboBox>
 #include <QDebug>
+#include <QColor>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)

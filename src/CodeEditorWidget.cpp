@@ -104,21 +104,30 @@ void CodeEditorWidget::updateRemoteCursor(const QString& userId, const QString& 
     cursor.username = username;
     cursor.position = position;
 
-    // Assign a color if it doesn't have one
-    if (!remoteCursors.contains(userId)) {
-        // Generate a color based on userId hash
-        int hash = 0;
-        for (QChar c : userId) {
-            hash = (hash * 31) + c.unicode();
+    // Use a fixed set of distinct colors for different users
+    static const QColor colors[] = {
+         QColor(255, 0, 0),     // Red
+         QColor(0, 255, 0),     // Green
+         QColor(0, 0, 255),     // Blue
+         QColor(255, 255, 0),   // Yellow
+         QColor(255, 0, 255),   // Magenta
+         QColor(0, 255, 255),   // Cyan
+         QColor(255, 128, 0),   // Orange
+         QColor(128, 0, 255)    // Purple
+     };
+ 
+     // Calculate a more deterministic color index based on the entire user ID
+     int colorIndex = 0;
+     if (!userId.isEmpty()) {
+         // Sum up all characters in the user ID
+         int sum = 0;
+         for (const QChar& c : userId) {
+             sum += c.unicode();
         }
 
-        // Create a hue between 0 and 359 (exclude red which is for errors)
-        int hue = (hash % 300) + 30;
-        QColor color = QColor::fromHsv(hue, 255, 255);
-        cursor.color = color;
-    } else {
-        cursor.color = remoteCursors[userId].color;
+        colorIndex = sum % 8;
     }
+    cursor.color = colors[colorIndex];
 
     // Store the cursor
     remoteCursors[userId] = cursor;
@@ -167,11 +176,15 @@ void CodeEditorWidget::paintEvent(QPaintEvent* event)
         nameRect.setLeft(cursorRectangle.left());
         nameRect.setWidth(fontMetrics().horizontalAdvance(cursor.username) + 10);
 
-        // Draw a background rectangle
-        painter.fillRect(nameRect, cursor.color);
+        // Draw a semi-transparent background rectangle
+        QColor bgColor = cursor.color;
+        bgColor.setAlpha(180); // Make it semi-transparent
+        painter.fillRect(nameRect, bgColor);
 
-        // Draw the text
-        painter.setPen(Qt::white);
+        // Draw the text with contrasting color
+         // If the background is light, use dark text; if dark, use light text
+         QColor textColor = (bgColor.lightness() > 128) ? Qt::black : Qt::white;
+         painter.setPen(textColor);
         painter.drawText(nameRect, Qt::AlignCenter, cursor.username);
     }
 }
@@ -245,7 +258,8 @@ void CodeEditorWidget::highlightCurrentLine()
     if (!isReadOnly()) {
         QTextEdit::ExtraSelection selection;
 
-        QColor lineColor = QColor(Qt::yellow).lighter(180);
+        // Use a light grey color for the current line highlight
+        QColor lineColor = QColor(0, 0, 0); // Light grey
 
         selection.format.setBackground(lineColor);
         selection.format.setProperty(QTextFormat::FullWidthSelection, true);
